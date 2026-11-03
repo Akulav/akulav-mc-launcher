@@ -1,2 +1,0 @@
-9.0.0
-https://github.com/Akulav/AkulavMCLauncher/releases/download/9.0.0/AkulavLauncherInstaller.exe

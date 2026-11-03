@@ -1,0 +1,54 @@
+[package]
+name = "akulav-launcher"
+version = "10.1.0"
+edition = "2021"
+description = "Akulav Launcher - a lightweight Minecraft modpack launcher"
+license = "MIT"
+build = "build.rs"
+
+[[bin]]
+name = "AkulavLauncher"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.32", default-features = false, features = ["default_fonts", "glow", "persistence", "wayland", "x11"] }
+egui = "0.32"
+egui-phosphor = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "sync", "time", "io-util"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "gzip"] }
+futures = "0.3"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+sha1 = "0.10"
+md-5 = "0.10"
+hex = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+dirs = "6"
+sysinfo = { version = "0.35", default-features = false, features = ["system"] }
+open = "5"
+regex = "1"
+crossbeam-channel = "0.5"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+base64 = "0.23.1"
+sha2 = "0.11.1"
+
+[build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[dev-dependencies]
+tempfile = "3"
+
+[target."cfg(windows)".dependencies]
+mslnk = "0.1.8"
+winreg = "0.56.0"

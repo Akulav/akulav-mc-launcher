@@ -1,0 +1,63 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --release
+      - name: Build
+        run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AkulavLauncher-windows
+          path: target/release/AkulavLauncher.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/AkulavLauncher.exe
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Zig (for an old-glibc build that runs on most distros)
+        run: |
+          pip install ziglang
+          cargo install cargo-zigbuild --locked
+      - name: Test
+        run: cargo test --release
+      - name: Build (glibc 2.28+)
+        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.28
+      - name: Package
+        run: |
+          cp target/x86_64-unknown-linux-gnu/release/AkulavLauncher AkulavLauncher-linux-x86_64
+          chmod +x AkulavLauncher-linux-x86_64
+          tar -czf AkulavLauncher-linux-x86_64.tar.gz AkulavLauncher-linux-x86_64
+          sha256sum AkulavLauncher-linux-x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AkulavLauncher-linux
+          path: |
+            AkulavLauncher-linux-x86_64
+            AkulavLauncher-linux-x86_64.tar.gz
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            AkulavLauncher-linux-x86_64
+            AkulavLauncher-linux-x86_64.tar.gz
