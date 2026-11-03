@@ -1,8 +1,11 @@
 [package]
 name = "akulav-launcher"
-version = "10.1.0"
+version = "10.2.0"
 edition = "2021"
-description = "Akulav Launcher - a lightweight Minecraft modpack launcher"
+authors = ["Akulav"]
+description = "Akulav Launcher - a lightweight Minecraft modpack launcher, made by Akulav"
+repository = "https://github.com/Akulav/akulav-mc-launcher"
+homepage = "https://akulav.com"
 license-file = "LICENSE"
 build = "build.rs"
 

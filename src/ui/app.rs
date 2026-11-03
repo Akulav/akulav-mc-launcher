@@ -273,7 +273,8 @@ impl LauncherApp {
             rx,
             reporter,
         };
-        app.reporter.info(format!("Akulav Launcher {} — data folder: {}", update::CURRENT_VERSION, app.paths.root.display()));
+        app.reporter.info(format!("Akulav Launcher {} by {} — {}", update::CURRENT_VERSION, update::AUTHOR, update::REPO_URL));
+        app.reporter.info(format!("Data folder: {}", app.paths.root.display()));
         app.reload_modpacks();
         jobs::spawn_update_check(app.rt.handle(), app.reporter.clone());
         if let Some(from) = &startup.updated_from {
@@ -667,13 +668,20 @@ impl LauncherApp {
         let galley = ui.painter().layout(sub.0.to_string(), regular(11.5), sub.1, sub_rect.width());
         ui.painter().galley(sub_rect.min, galley, sub.1);
 
+        // Credit line: version and author, links to the repository.
+        let credit = Rect::from_center_size(pos2(ui.max_rect().center().x, bottom - 16.0), vec2(ui.max_rect().width() - 24.0, 20.0));
+        let credit_resp = ui.interact(credit, Id::new("sidebar_credit"), Sense::click());
+        let credit_color = if credit_resp.hovered() { MUTED } else { FAINT };
         ui.painter().text(
-            pos2(ui.max_rect().center().x, bottom - 16.0),
+            credit.center(),
             Align2::CENTER_CENTER,
-            format!("v{}", update::CURRENT_VERSION),
+            format!("v{}  ·  made by {} {}", update::CURRENT_VERSION, update::AUTHOR, ph::HEART),
             regular(11.0),
-            FAINT,
+            if credit_resp.hovered() { ACCENT_HI } else { credit_color },
         );
+        if credit_resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Akulav Launcher on GitHub").clicked() {
+            let _ = open::that_detached(update::REPO_URL);
+        }
     }
 
     fn toasts_ui(&mut self, ctx: &egui::Context) {

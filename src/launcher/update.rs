@@ -8,6 +8,8 @@ use super::net;
 
 pub const VERSION_URL: &str = "https://akulav.com/shared/5ce6926c3dda5f322df1ac59";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const AUTHOR: &str = "Akulav";
+pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateInfo {

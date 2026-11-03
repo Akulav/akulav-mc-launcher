@@ -334,7 +334,7 @@ mod linux {
 
     pub fn desktop_entry(exe: &Path) -> String {
         format!(
-            "[Desktop Entry]\nType=Application\nName=Akulav Launcher\nGenericName=Minecraft Launcher\nComment=Play Akulav Minecraft modpacks\nExec={}\nIcon={APP_ID}\nTerminal=false\nCategories=Game;\nKeywords=minecraft;modpack;launcher;\nStartupWMClass={APP_ID}\n",
+            "[Desktop Entry]\nType=Application\nName=Akulav Launcher\nGenericName=Minecraft Launcher\nComment=Play Akulav Minecraft modpacks - made by Akulav\nExec={}\nIcon={APP_ID}\nTerminal=false\nCategories=Game;\nKeywords=minecraft;modpack;launcher;\nStartupWMClass={APP_ID}\n",
             exec_quote(exe)
         )
     }
@@ -482,7 +482,8 @@ mod windows {
         key.set_value("DisplayIcon", &exe)?;
         key.set_value("InstallLocation", &target.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default())?;
         key.set_value("UninstallString", &format!("\"{exe}\" --uninstall"))?;
-        key.set_value("URLInfoAbout", &"https://github.com/Akulav/AkulavMCLauncher")?;
+        key.set_value("URLInfoAbout", &super::super::update::REPO_URL)?;
+        key.set_value("HelpLink", &format!("{}/issues", super::super::update::REPO_URL))?;
         key.set_value("NoModify", &1u32)?;
         key.set_value("NoRepair", &1u32)?;
         let kb = std::fs::metadata(target).map(|m| (m.len() / 1024) as u32).unwrap_or(0);

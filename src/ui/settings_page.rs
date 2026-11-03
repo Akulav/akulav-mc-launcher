@@ -195,9 +195,10 @@ impl LauncherApp {
             ui.add_space(12.0);
 
             card(ui, "About", ph::INFO, |ui| {
-                setting_row(ui, &format!("Akulav Launcher {}", update::CURRENT_VERSION), "Open source, no telemetry. Rewritten in Rust.", |ui| {
+                let credit = format!("Made with love by {}. Source-available, no telemetry, written in Rust.", update::AUTHOR);
+                setting_row(ui, &format!("Akulav Launcher {}", update::CURRENT_VERSION), &credit, |ui| {
                     if ghost_button(ui, ph::GITHUB_LOGO, "GitHub").clicked() {
-                        let _ = open::that_detached("https://github.com/Akulav/AkulavMCLauncher");
+                        let _ = open::that_detached(update::REPO_URL);
                     }
                     match self.update.info().cloned() {
                         Some(info) => {

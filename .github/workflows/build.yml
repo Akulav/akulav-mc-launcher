@@ -1,4 +1,11 @@
-name: Build
+# Builds and tests Windows + Linux on every push and PR.
+#
+# Releasing is automatic: bump `version` in Cargo.toml and push to main. When no release with that
+# version exists yet, the `release` job tags the commit (e.g. `10.2.0`) and publishes a GitHub
+# release with both binaries, SHA256SUMS.txt and a ready-to-upload version.txt.
+# Pushing a tag by hand works too.
+
+name: Build & Release
 
 on:
   push:
@@ -7,8 +14,47 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          release=false
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            if [[ "${GITHUB_REF_NAME#v}" != "$version" ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+              exit 1
+            fi
+            release=true
+          elif [[ "$GITHUB_EVENT_NAME" != "pull_request" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+            if gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Release $version already exists, nothing to publish."
+            else
+              release=true
+            fi
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "### Akulav Launcher $version (release: $release)" >> "$GITHUB_STEP_SUMMARY"
+
   windows:
+    name: Windows x64
+    needs: meta
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,13 +68,11 @@ jobs:
         with:
           name: AkulavLauncher-windows
           path: target/release/AkulavLauncher.exe
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: target/release/AkulavLauncher.exe
+          if-no-files-found: error
 
   linux:
+    name: Linux x64
+    needs: meta
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,17 +91,67 @@ jobs:
           cp target/x86_64-unknown-linux-gnu/release/AkulavLauncher AkulavLauncher-linux-x86_64
           chmod +x AkulavLauncher-linux-x86_64
           tar -czf AkulavLauncher-linux-x86_64.tar.gz AkulavLauncher-linux-x86_64
-          sha256sum AkulavLauncher-linux-x86_64
       - uses: actions/upload-artifact@v4
         with:
           name: AkulavLauncher-linux
           path: |
             AkulavLauncher-linux-x86_64
             AkulavLauncher-linux-x86_64.tar.gz
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [meta, windows, linux]
+    if: needs.meta.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and version.txt
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          BASE: https://github.com/${{ github.repository }}/releases/download/${{ needs.meta.outputs.version }}
+        run: |
+          cd dist
+          chmod +x AkulavLauncher-linux-x86_64
+          sha256sum AkulavLauncher.exe AkulavLauncher-linux-x86_64 AkulavLauncher-linux-x86_64.tar.gz > SHA256SUMS.txt
+          win=$(sha256sum AkulavLauncher.exe | cut -d' ' -f1)
+          lin=$(sha256sum AkulavLauncher-linux-x86_64 | cut -d' ' -f1)
+          printf '%s\n%s\n%s\nlinux %s %s\n' "$VERSION" "$BASE/AkulavLauncher.exe" "$win" "$BASE/AkulavLauncher-linux-x86_64" "$lin" > version.txt
+          cat SHA256SUMS.txt version.txt
+          {
+            echo "## Akulav Launcher $VERSION"
+            echo
+            echo "_Made by **Akulav**: no spyware, no telemetry, no bloat._"
+            echo
+            echo "| Platform | Download |"
+            echo "| --- | --- |"
+            echo "| Windows 10/11 (x64) | [AkulavLauncher.exe]($BASE/AkulavLauncher.exe) |"
+            echo "| Linux x64 (glibc 2.28+) | [AkulavLauncher-linux-x86_64.tar.gz]($BASE/AkulavLauncher-linux-x86_64.tar.gz) or the bare [binary]($BASE/AkulavLauncher-linux-x86_64) |"
+            echo
+            echo "Run it once and it installs itself (no admin rights). Existing installs update in place from the title bar."
+            echo
+            echo "<details><summary>SHA-256 checksums</summary>"
+            echo
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+            echo "</details>"
+            echo
+          } > notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.version }}
+          name: Akulav Launcher ${{ needs.meta.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          body_path: dist/notes.md
+          generate_release_notes: true
+          make_latest: true
           files: |
-            AkulavLauncher-linux-x86_64
-            AkulavLauncher-linux-x86_64.tar.gz
+            dist/AkulavLauncher.exe
+            dist/AkulavLauncher-linux-x86_64
+            dist/AkulavLauncher-linux-x86_64.tar.gz
+            dist/SHA256SUMS.txt
+            dist/version.txt
