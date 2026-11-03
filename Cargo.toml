@@ -3,7 +3,7 @@ name = "akulav-launcher"
 version = "10.1.0"
 edition = "2021"
 description = "Akulav Launcher - a lightweight Minecraft modpack launcher"
-license = "MIT"
+license-file = "LICENSE"
 build = "build.rs"
 
 [[bin]]
