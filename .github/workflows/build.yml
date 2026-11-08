@@ -1,8 +1,14 @@
-# Builds and tests Windows + Linux on every push and PR.
+# Builds and tests Windows, Linux and macOS on every push and PR.
+#
+# Every release ships exactly one file per OS, and that file both installs and updates:
+#   AkulavLauncher-setup.exe     Windows x64 (Inno Setup; asks for the folder once, updates reuse it)
+#   AkulavLauncher-linux-x64     Linux x64 (installs itself into a folder you pick)
+#   AkulavLauncher-macos-arm64   macOS Apple Silicon (installs itself as an .app into a folder you pick)
+# plus SHA256SUMS.txt (installed launchers verify updates against it) and version.txt for
+# launchers older than 11.0, which still read it from akulav.com.
 #
 # Releasing is automatic: bump `version` in Cargo.toml and push to main. When no release with that
-# version exists yet, the `release` job tags the commit (e.g. `10.2.0`) and publishes a GitHub
-# release with both binaries, SHA256SUMS.txt and a ready-to-upload version.txt.
+# version exists yet, the `release` job tags the commit (e.g. `11.0.0`) and publishes the release.
 # Pushing a tag by hand works too.
 
 name: Build & Release
@@ -16,6 +22,10 @@ on:
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -64,10 +74,22 @@ jobs:
         run: cargo test --release
       - name: Build
         run: cargo build --release
+      - name: Setup (install + update in one file)
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVersion=${{ needs.meta.outputs.version }}" "/DSourceExe=$PWD\target\release\AkulavLauncher.exe" installer\akulav-launcher.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item dist\AkulavLauncher-setup.exe .
       - uses: actions/upload-artifact@v4
         with:
-          name: AkulavLauncher-windows
-          path: target/release/AkulavLauncher.exe
+          name: AkulavLauncher-setup.exe
+          path: AkulavLauncher-setup.exe
           if-no-files-found: error
 
   linux:
@@ -85,23 +107,43 @@ jobs:
       - name: Test
         run: cargo test --release
       - name: Build (glibc 2.28+)
-        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.28
-      - name: Package
         run: |
-          cp target/x86_64-unknown-linux-gnu/release/AkulavLauncher AkulavLauncher-linux-x86_64
-          chmod +x AkulavLauncher-linux-x86_64
-          tar -czf AkulavLauncher-linux-x86_64.tar.gz AkulavLauncher-linux-x86_64
+          cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.28
+          cp target/x86_64-unknown-linux-gnu/release/AkulavLauncher AkulavLauncher-linux-x64
+          chmod +x AkulavLauncher-linux-x64
       - uses: actions/upload-artifact@v4
         with:
-          name: AkulavLauncher-linux
-          path: |
-            AkulavLauncher-linux-x86_64
-            AkulavLauncher-linux-x86_64.tar.gz
+          name: AkulavLauncher-linux-x64
+          path: AkulavLauncher-linux-x64
+          if-no-files-found: error
+
+  macos:
+    name: macOS Apple Silicon
+    needs: meta
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --release
+      - name: Build
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cp target/aarch64-apple-darwin/release/AkulavLauncher AkulavLauncher-macos-arm64
+          chmod +x AkulavLauncher-macos-arm64
+          codesign --force -s - AkulavLauncher-macos-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AkulavLauncher-macos-arm64
+          path: AkulavLauncher-macos-arm64
           if-no-files-found: error
 
   release:
     name: Publish release
-    needs: [meta, windows, linux]
+    needs: [meta, windows, linux, macos]
     if: needs.meta.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -109,29 +151,36 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Checksums and version.txt
+      - name: Checksums, version.txt and notes
         env:
           VERSION: ${{ needs.meta.outputs.version }}
           BASE: https://github.com/${{ github.repository }}/releases/download/${{ needs.meta.outputs.version }}
         run: |
+          set -euo pipefail
           cd dist
-          chmod +x AkulavLauncher-linux-x86_64
-          sha256sum AkulavLauncher.exe AkulavLauncher-linux-x86_64 AkulavLauncher-linux-x86_64.tar.gz > SHA256SUMS.txt
-          win=$(sha256sum AkulavLauncher.exe | cut -d' ' -f1)
-          lin=$(sha256sum AkulavLauncher-linux-x86_64 | cut -d' ' -f1)
-          printf '%s\n%s\n%s\nlinux %s %s\n' "$VERSION" "$BASE/AkulavLauncher.exe" "$win" "$BASE/AkulavLauncher-linux-x86_64" "$lin" > version.txt
+          chmod +x AkulavLauncher-linux-x64 AkulavLauncher-macos-arm64
+          sha256sum AkulavLauncher-setup.exe AkulavLauncher-linux-x64 AkulavLauncher-macos-arm64 > SHA256SUMS.txt
+          win=$(sha256sum AkulavLauncher-setup.exe | cut -d' ' -f1)
+          lin=$(sha256sum AkulavLauncher-linux-x64 | cut -d' ' -f1)
+          # For launchers before 11.0 only: they read this file from akulav.com, download line 2
+          # (Windows) or the linux line, and hand over to the new version's installer.
+          printf '%s\n%s\n%s\nlinux %s %s\n' "$VERSION" "$BASE/AkulavLauncher-setup.exe" "$win" "$BASE/AkulavLauncher-linux-x64" "$lin" > version.txt
           cat SHA256SUMS.txt version.txt
           {
             echo "## Akulav Launcher $VERSION"
             echo
             echo "_Made by **Akulav**: no spyware, no telemetry, no bloat._"
             echo
-            echo "| Platform | Download |"
-            echo "| --- | --- |"
-            echo "| Windows 10/11 (x64) | [AkulavLauncher.exe]($BASE/AkulavLauncher.exe) |"
-            echo "| Linux x64 (glibc 2.28+) | [AkulavLauncher-linux-x86_64.tar.gz]($BASE/AkulavLauncher-linux-x86_64.tar.gz) or the bare [binary]($BASE/AkulavLauncher-linux-x86_64) |"
+            echo "One file per system. The same file installs the launcher and later updates it."
             echo
-            echo "Run it once and it installs itself (no admin rights). Existing installs update in place from the title bar."
+            echo "| System | Download | First start |"
+            echo "| --- | --- | --- |"
+            echo "| Windows 10/11 (x64) | [AkulavLauncher-setup.exe]($BASE/AkulavLauncher-setup.exe) | Asks where to install (no admin rights). Updates reuse that folder. |"
+            echo "| Linux x64 (glibc 2.28+) | [AkulavLauncher-linux-x64]($BASE/AkulavLauncher-linux-x64) | \`chmod +x\` it and run it. It asks where to install. |"
+            echo "| macOS Apple Silicon | [AkulavLauncher-macos-arm64]($BASE/AkulavLauncher-macos-arm64) | \`chmod +x\`, then right-click → Open. It asks where to install. |"
+            echo
+            echo "The launcher and everything it downloads (modpacks, worlds, Java) live in the folder you choose."
+            echo "Installed launchers update themselves in one click, verified with SHA-256."
             echo
             echo "<details><summary>SHA-256 checksums</summary>"
             echo
@@ -150,8 +199,8 @@ jobs:
           generate_release_notes: true
           make_latest: true
           files: |
-            dist/AkulavLauncher.exe
-            dist/AkulavLauncher-linux-x86_64
-            dist/AkulavLauncher-linux-x86_64.tar.gz
+            dist/AkulavLauncher-setup.exe
+            dist/AkulavLauncher-linux-x64
+            dist/AkulavLauncher-macos-arm64
             dist/SHA256SUMS.txt
             dist/version.txt

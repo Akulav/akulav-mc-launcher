@@ -6,7 +6,7 @@
 
 **A fast, lightweight Minecraft modpack launcher, made by Akulav.**
 
-No spyware. No telemetry. No bloat. One native executable.
+No spyware. No telemetry. No bloat. One file per system that installs and updates itself.
 
 [![Latest release](https://img.shields.io/github/v/release/Akulav/akulav-mc-launcher?style=for-the-badge&label=release&color=e5383b)](https://github.com/Akulav/akulav-mc-launcher/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Akulav/akulav-mc-launcher/total?style=for-the-badge&color=f4b740)](https://github.com/Akulav/akulav-mc-launcher/releases)
@@ -14,6 +14,7 @@ No spyware. No telemetry. No bloat. One native executable.
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-x64-FCC624?style=flat-square&logo=linux&logoColor=black)
+![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-000000?style=flat-square&logo=apple&logoColor=white)
 ![Rust](https://img.shields.io/badge/made%20with-Rust-B7410E?style=flat-square&logo=rust&logoColor=white)
 ![License](https://img.shields.io/badge/license-source--available-5c6270?style=flat-square)
 
@@ -25,10 +26,13 @@ No spyware. No telemetry. No bloat. One native executable.
 
 ## ⬇️ Download
 
+One file per system. The same file installs the launcher the first time and updates it later.
+
 | Platform | File | Notes |
 | :-- | :-- | :-- |
-| 🪟 **Windows 10 / 11** (x64) | [`AkulavLauncher.exe`](https://github.com/Akulav/akulav-mc-launcher/releases/latest/download/AkulavLauncher.exe) | Run it, and it installs itself. No admin rights needed. |
-| 🐧 **Linux** (x64) | [`AkulavLauncher-linux-x86_64.tar.gz`](https://github.com/Akulav/akulav-mc-launcher/releases/latest/download/AkulavLauncher-linux-x86_64.tar.gz) | glibc 2.28+, OpenGL, X11 or Wayland |
+| 🪟 **Windows 10 / 11** (x64) | [`AkulavLauncher-setup.exe`](https://github.com/Akulav/akulav-mc-launcher/releases/latest/download/AkulavLauncher-setup.exe) | Asks where to install. No admin rights needed. |
+| 🐧 **Linux** (x64) | [`AkulavLauncher-linux-x64`](https://github.com/Akulav/akulav-mc-launcher/releases/latest/download/AkulavLauncher-linux-x64) | glibc 2.28+, OpenGL, X11 or Wayland |
+| 🍎 **macOS** (Apple Silicon) | [`AkulavLauncher-macos-arm64`](https://github.com/Akulav/akulav-mc-launcher/releases/latest/download/AkulavLauncher-macos-arm64) | macOS 12+ |
 
 Every release also ships `SHA256SUMS.txt` so you can verify your download.
 
@@ -68,8 +72,8 @@ Every release also ships `SHA256SUMS.txt` so you can verify your download.
 <td width="50%" valign="top">
 
 ### 🔄 Always up to date
-- Installs itself on first run (Desktop + Start-menu shortcuts, or an app-menu entry on Linux).
-- **One-click in-place self-update**, verified with SHA-256.
+- **You choose the install folder** once; the launcher and all its downloads live there.
+- **One-click updates** from GitHub, verified with SHA-256, into the same folder.
 - Live **Console** with game, installer and launcher output, filters, search and a crash banner.
 - Toast notifications instead of message boxes.
 
@@ -80,24 +84,43 @@ Every release also ships `SHA256SUMS.txt` so you can verify your download.
 ## 🚀 Getting started
 
 ### Windows
-1. Download **`AkulavLauncher.exe`** and run it from anywhere.
-2. It installs itself to `%LOCALAPPDATA%\Programs\AkulavLauncher`, adds Desktop and Start-menu shortcuts and an entry in *Settings → Apps* (uninstall from there), then restarts from the installed copy.
+1. Download **`AkulavLauncher-setup.exe`** and run it.
+2. Pick the install folder (default `%LOCALAPPDATA%\Programs\AkulavLauncher`, any folder you can write to works,
+   e.g. `D:\Games\AkulavLauncher`). It adds Start-menu and (optional) Desktop shortcuts and an entry in
+   *Settings → Apps*.
+3. Updates install into the same folder without asking: in-app with one click, or by running a newer setup.
 
-> 💡 Want it portable? Put an empty `portable.txt` next to the exe.
+Uninstall from *Settings → Apps* or *Settings → Storage* in the launcher. The uninstaller asks whether to keep your
+modpacks and worlds.
 
 ### Linux
 ```bash
-tar -xzf AkulavLauncher-linux-x86_64.tar.gz
-./AkulavLauncher-linux-x86_64
+chmod +x AkulavLauncher-linux-x64
+./AkulavLauncher-linux-x64
 ```
-It installs itself to `~/.local/share/AkulavLauncher/bin/`, adds an app-menu entry with icon, a Desktop shortcut and an
-`akulav-launcher` terminal command. Uninstall from *Settings → Storage* or with `akulav-launcher --uninstall`.
+It asks for an install folder (default `~/.local/share/AkulavLauncher`), copies itself there and adds an app-menu
+entry with icon, a Desktop shortcut and an `akulav-launcher` terminal command. *Just run it* skips installing.
+Running a newer download later offers to update the installed copy in its folder.
+Uninstall from *Settings → Storage* or with `akulav-launcher --uninstall`.
 
 Needs glibc 2.28+ (Ubuntu 20.04, Debian 10, Fedora 29, Mint 20 or newer). Mojang ships no ARM Linux Java, so ARM needs a custom Java path.
 
+### macOS (Apple Silicon)
+```bash
+chmod +x AkulavLauncher-macos-arm64
+xattr -d com.apple.quarantine AkulavLauncher-macos-arm64
+./AkulavLauncher-macos-arm64
+```
+It asks for an install folder (default `~/Applications/Akulav Launcher`) and creates `Akulav Launcher.app` there.
+
+> 💡 Want it portable? Put an empty `portable.txt` next to the program (or start it with `--portable`): it then keeps
+> its data next to itself and never offers to install.
+
 ## 📁 Where your data lives
 
-Everything is in `%APPDATA%\AkulavLauncher` (Linux: `~/.local/share/AkulavLauncher`):
+**In the install folder you chose**, next to the program. The folder is remembered (Windows: by the setup; Linux/macOS:
+in `~/.config/akulav-launcher/install-dir` or `~/Library/Application Support/akulav-launcher/install-dir`), so updates
+keep everything in place. Data from launchers before 11.0 (`%APPDATA%\AkulavLauncher`) is moved in on the first start.
 
 | Path | Contents |
 | :-- | :-- |
@@ -106,6 +129,7 @@ Everything is in `%APPDATA%\AkulavLauncher` (Linux: `~/.local/share/AkulavLaunch
 | `shared/` | versions, libraries, assets, Java runtimes |
 | `instances/<pack>/` | each pack's game folder (mods, config, saves…) |
 | `cache/` | temporary downloads |
+| `.akulav-install` | marks the install folder (holds the installed version) |
 
 Set `AKULAV_DATA_DIR` to use a different data folder.
 
@@ -118,13 +142,21 @@ AkulavLauncher.exe --cli list
 AkulavLauncher.exe --cli launch "GoldenEra - Ultimate" [--user NAME] [--ram 6144] [--repair] [--prepare-only]
 ```
 
+| Flag | Meaning |
+| :-- | :-- |
+| `--version` | Print the version and exit |
+| `--here` | Run without offering to install (Linux/macOS) |
+| `--portable` | Keep data next to the program, never install |
+| `--uninstall` | Remove the installed launcher (Windows: starts the uninstaller) |
+
 <details>
 <summary><b>🛠️ For maintainers: modpacks, updates and releases</b></summary>
 
 ### Remote files
 
 - Modpack list: `https://akulav.com/shared/aa7e873115b2344cc291045b` (can be overridden in Settings)
-- Launcher version: `https://akulav.com/shared/5ce6926c3dda5f322df1ac59`
+- Launcher updates (11.0+): the latest GitHub release of this repository, verified against its `SHA256SUMS.txt`
+- Launcher version for launchers before 11.0: `https://akulav.com/shared/5ce6926c3dda5f322df1ac59`
 
 `modpacks.json` entries can optionally include a `"Description"` shown on the pack page:
 
@@ -149,26 +181,39 @@ Releases are fully automated by [`.github/workflows/build.yml`](.github/workflow
 
 1. Bump `version` in `Cargo.toml`.
 2. Push to `main`.
-3. If no release with that version exists, CI tests and builds Windows and Linux, tags the commit and publishes a GitHub
-   release with `AkulavLauncher.exe`, `AkulavLauncher-linux-x86_64`, the `.tar.gz`, `SHA256SUMS.txt` and a ready-made **`version.txt`**.
-4. Upload that `version.txt` to the launcher-version URL above. Installed launchers pick up the update within 2 hours.
+3. If no release with that version exists, CI tests and builds all three systems, tags the commit and publishes a GitHub
+   release with exactly three programs, `AkulavLauncher-setup.exe`, `AkulavLauncher-linux-x64` and
+   `AkulavLauncher-macos-arm64`, plus `SHA256SUMS.txt` and `version.txt`.
+4. Launchers 11.0+ find the release on GitHub by themselves (checked at start and every 2 hours, or with
+   *Check for updates*). Only while launchers older than 11.0 are still around: upload that `version.txt` to the
+   old launcher-version URL above.
 
-### `version.txt` format
+### How updates are applied
+
+When the latest release is newer than the running launcher, the title bar shows *Update available*. One click downloads
+this system's file and checks it against `SHA256SUMS.txt`; *Restart & update* then
+
+- **Windows:** runs `AkulavLauncher-setup.exe /VERYSILENT /UPDATE` with the current install folder. The setup closes the
+  launcher, installs into the same folder and starts the new version.
+- **Linux / macOS:** swaps the binary in the install folder in place (re-signing the app on macOS) and restarts.
+
+### Upgrading from launchers before 11.0
+
+`version.txt` points old launchers at the new files:
 
 ```
-10.2.0
-https://github.com/Akulav/akulav-mc-launcher/releases/download/10.2.0/AkulavLauncher.exe
-<optional SHA-256 of the exe>
-linux https://github.com/Akulav/akulav-mc-launcher/releases/download/10.2.0/AkulavLauncher-linux-x86_64 <optional SHA-256>
+11.0.0
+https://github.com/Akulav/akulav-mc-launcher/releases/download/11.0.0/AkulavLauncher-setup.exe
+<SHA-256 of the setup>
+linux https://github.com/Akulav/akulav-mc-launcher/releases/download/11.0.0/AkulavLauncher-linux-x64 <SHA-256>
 ```
 
-Line 2 is the **Windows launcher exe itself**, not an installer (it's also what 9.x launchers download). The `linux` line points
-at the bare Linux binary. A Linux launcher only updates when that line exists; old launchers ignore it. When line 1 is higher
-than the running version, the title bar shows *Update available*. One click downloads and verifies the new binary, and
-*Restart & update* swaps it in place.
-
-**Upgrading 9.x users:** the old C# launcher downloads line 2 as its "installer" and runs it; the new launcher then installs
-itself, replaces the old desktop shortcut and removes `C:\AkulavLauncher`.
+- **10.x on Windows** swaps the setup in as its own `AkulavLauncher.exe` and starts it. The setup notices, restarts
+  from the temp folder and shows the normal wizard, so the user picks the install folder once. Old data in
+  `%APPDATA%\AkulavLauncher` is moved into it, and the old *Apps* entry and `C:\AkulavLauncher` (9.x) are removed.
+- **10.x on Linux** swaps in the new binary in `~/.local/share/AkulavLauncher/bin/`; it moves itself up into
+  `~/.local/share/AkulavLauncher` (where the data already is) and carries on.
+- **9.x** downloads line 2 as its installer and runs it.
 
 ### Building from source
 
@@ -176,9 +221,15 @@ itself, replaces the old desktop shortcut and removes `C:\AkulavLauncher`.
 cargo build --release
 ```
 
-The launcher is `target/release/AkulavLauncher(.exe)`. For a Linux binary that runs on older distros:
+The launcher is `target/release/AkulavLauncher(.exe)`. The Windows setup needs [Inno Setup 6](https://jrsoftware.org/isinfo.php):
+
+```bash
+iscc /DAppVersion=11.0.0 /DSourceExe=%CD%\target\release\AkulavLauncher.exe installer\akulav-launcher.iss
+```
+
+It writes `dist\AkulavLauncher-setup.exe`. For a Linux binary that runs on older distros:
 `pip install ziglang && cargo install cargo-zigbuild`, then `cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.28`.
-Debug builds never install themselves. `cargo test` runs the unit tests.
+Debug builds never offer to install themselves (pass `--here` to a release build for the same). `cargo test` runs the unit tests.
 
 </details>
 

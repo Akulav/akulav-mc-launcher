@@ -282,7 +282,7 @@ pub fn spawn_load_modpacks(rt: &tokio::runtime::Handle, url: String, paths: Path
     });
 }
 
-/// Check `version.txt` for a newer launcher release.
+/// Check GitHub for a newer launcher release.
 pub fn spawn_update_check(rt: &tokio::runtime::Handle, reporter: Reporter) {
     rt.spawn(async move {
         let Ok(client) = net::client() else { return };
@@ -333,7 +333,7 @@ pub fn spawn_update_download(rt: &tokio::runtime::Handle, info: super::update::U
                     r.send(Event::UpdateProgress { done, total });
                 }
             };
-            super::selfupdate::download_update(&client, &info, &on_bytes, &Cancel::default()).await
+            super::install::download_update(&client, &info, &on_bytes, &Cancel::default()).await
         }
         .await;
         match result {

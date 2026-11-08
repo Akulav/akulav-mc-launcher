@@ -1,6 +1,6 @@
 [package]
 name = "akulav-launcher"
-version = "10.2.0"
+version = "11.0.0"
 edition = "2021"
 authors = ["Akulav"]
 description = "Akulav Launcher - a lightweight Minecraft modpack launcher, made by Akulav"
@@ -53,5 +53,4 @@ panic = "abort"
 tempfile = "3"
 
 [target."cfg(windows)".dependencies]
-mslnk = "0.1.8"
 winreg = "0.56.0"

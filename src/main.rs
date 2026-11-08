@@ -10,9 +10,14 @@ fn main() -> eframe::Result<()> {
         attach_parent_console();
         std::process::exit(cli::run(&args[1..]));
     }
-    let startup = match launcher::selfupdate::on_startup(&args) {
-        launcher::selfupdate::Startup::Exit => return Ok(()),
-        launcher::selfupdate::Startup::Run { installed, updated_from } => ui::app::StartupInfo { installed, updated_from },
+    if args.iter().any(|a| a == "--version") {
+        attach_parent_console();
+        println!("Akulav Launcher {}", launcher::update::CURRENT_VERSION);
+        return Ok(());
+    }
+    let startup = match launcher::install::on_startup(&args) {
+        launcher::install::Startup::Exit => return Ok(()),
+        launcher::install::Startup::Run(info) => info,
     };
 
     let icon = image::load_from_memory(include_bytes!("../assets/icon.png"))

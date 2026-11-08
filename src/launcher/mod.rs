@@ -4,7 +4,7 @@ pub mod minecraft;
 pub mod modpacks;
 pub mod net;
 pub mod paths;
-pub mod selfupdate;
+pub mod install;
 pub mod settings;
 pub mod skins;
 pub mod system;

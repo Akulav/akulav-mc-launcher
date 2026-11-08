@@ -1,6 +1,7 @@
 //! Filesystem layout of the launcher.
 //!
-//! Everything lives under one data folder (`%APPDATA%\AkulavLauncher` on Windows):
+//! Everything lives under one data folder: the install folder the user chose (see
+//! [`super::install::data_root`]), next to the program itself:
 //!
 //! ```text
 //! AkulavLauncher/
@@ -30,10 +31,8 @@ impl Paths {
         if let Some(dir) = std::env::var_os("AKULAV_DATA_DIR").filter(|d| !d.is_empty()) {
             return Ok(Self::at(dir.into()));
         }
-        let base = dirs::data_dir()
-            .or_else(dirs::home_dir)
-            .ok_or_else(|| anyhow::anyhow!("could not locate the user data folder"))?;
-        Ok(Self::at(base.join("AkulavLauncher")))
+        let root = super::install::data_root().ok_or_else(|| anyhow::anyhow!("could not locate the user data folder"))?;
+        Ok(Self::at(root))
     }
 
     pub fn at(root: PathBuf) -> Self {

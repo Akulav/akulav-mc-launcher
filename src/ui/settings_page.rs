@@ -183,9 +183,9 @@ impl LauncherApp {
                         self.confirm = Some(Confirm::ResetSettings);
                     }
                 });
-                if cfg!(target_os = "linux") && crate::launcher::selfupdate::running_installed() {
+                if crate::launcher::install::running_installed() {
                     separator(ui);
-                    setting_row(ui, "Uninstall launcher", "Remove the launcher, its app-menu entry and shortcuts.", |ui| {
+                    setting_row(ui, "Uninstall launcher", "Remove the launcher and its shortcuts.", |ui| {
                         if danger_button(ui, ph::TRASH, "Uninstall").clicked() {
                             self.confirm = Some(Confirm::UninstallLauncher);
                         }

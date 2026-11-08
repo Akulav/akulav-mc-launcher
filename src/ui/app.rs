@@ -12,6 +12,7 @@ use egui_phosphor::regular as ph;
 use super::theme::*;
 use super::widgets::*;
 use crate::launcher::events::{Cancel, Event, LogLevel, LogLine, LogSource, Progress, ProgressUnit, Reporter};
+use crate::launcher::install::{self, Offer, StartupInfo};
 use crate::launcher::jobs::{self, LaunchRequest};
 use crate::launcher::modpacks::{InstalledDb, Modpack, DEFAULT_MODPACK_LIST_URL};
 use crate::launcher::paths::Paths;
@@ -108,8 +109,7 @@ pub struct Toast {
 pub enum Confirm {
     Uninstall(String),
     ResetSettings,
-    /// Remove the launcher itself (Linux; Windows uses Apps & features).
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    /// Remove the launcher itself (Windows: starts the setup's uninstaller).
     UninstallLauncher,
 }
 
@@ -136,13 +136,6 @@ pub enum SkinEntry {
     Loading,
     Ready { texture: TextureHandle, source: SkinSource },
     Missing,
-}
-
-/// Flags passed from `main` after self-install / self-update.
-#[derive(Debug, Clone, Default)]
-pub struct StartupInfo {
-    pub installed: bool,
-    pub updated_from: Option<String>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -190,8 +183,13 @@ pub struct LauncherApp {
     pub head_drag: egui::Vec2,
     pub hero_anim: Option<(String, Instant)>,
     pub uninstall_delete_data: bool,
-    /// Set after uninstalling so nothing is written back on exit.
-    pub uninstalled: bool,
+    /// Set after uninstalling, or after handing over to an installed copy, so nothing is written
+    /// back on exit.
+    pub skip_save: bool,
+    /// Linux/macOS: install (or update the installed copy) before anything else.
+    pub install_offer: Offer,
+    pub install_dir_edit: String,
+    pub install_error: Option<String>,
     pub list_url_edit: String,
     pub java_edit: String,
 
@@ -211,7 +209,6 @@ impl LauncherApp {
         apply_style(&cc.egui_ctx);
 
         let paths = Paths::detect().unwrap_or_else(|_| Paths::at(std::env::temp_dir().join("AkulavLauncher")));
-        let _ = paths.ensure();
         let settings = Settings::load(&paths);
         let installed = InstalledDb::load(&paths);
 
@@ -265,7 +262,13 @@ impl LauncherApp {
             head_drag: egui::Vec2::ZERO,
             hero_anim: None,
             uninstall_delete_data: false,
-            uninstalled: false,
+            skip_save: false,
+            install_dir_edit: match &startup.offer {
+                Offer::Install { suggested } => suggested.display().to_string(),
+                _ => String::new(),
+            },
+            install_offer: startup.offer.clone(),
+            install_error: None,
             background,
             app_icon,
             rt,
@@ -274,9 +277,14 @@ impl LauncherApp {
             reporter,
         };
         app.reporter.info(format!("Akulav Launcher {} by {} — {}", update::CURRENT_VERSION, update::AUTHOR, update::REPO_URL));
-        app.reporter.info(format!("Data folder: {}", app.paths.root.display()));
-        app.reload_modpacks();
-        jobs::spawn_update_check(app.rt.handle(), app.reporter.clone());
+        for note in &startup.notes {
+            app.reporter.info(note.clone());
+        }
+        // While the install offer is up nothing is created or downloaded: if the user installs,
+        // the installed copy starts with its own data folder.
+        if app.install_offer == Offer::None {
+            app.start_normally();
+        }
         if let Some(from) = &startup.updated_from {
             app.toast(ToastKind::Success, format!("Updated to {}", update::CURRENT_VERSION), format!("from version {from}. Enjoy!"));
         } else if startup.installed {
@@ -284,6 +292,14 @@ impl LauncherApp {
             app.toast(ToastKind::Success, "Akulav Launcher is installed", where_);
         }
         app
+    }
+
+    fn start_normally(&mut self) {
+        let _ = self.paths.ensure();
+        self.reporter.info(format!("Data folder: {}", self.paths.root.display()));
+        self.reload_modpacks();
+        jobs::spawn_update_check(self.rt.handle(), self.reporter.clone());
+        self.last_update_check = Instant::now();
     }
 
     pub fn list_url(&self) -> String {
@@ -765,14 +781,20 @@ impl LauncherApp {
                 "Uninstall",
             ),
             Confirm::ResetSettings => ("Reset all settings?".into(), "Nickname, modpack source and every pack's settings go back to defaults. Installed packs are kept.".into(), true, "Reset"),
+            Confirm::UninstallLauncher if install::UNINSTALL_ASKS_ABOUT_DATA => (
+                "Uninstall Akulav Launcher?".into(),
+                "The launcher closes and its uninstaller starts. It removes the launcher and its shortcuts, and asks whether to keep your modpacks and worlds.".into(),
+                true,
+                "Uninstall",
+            ),
             Confirm::UninstallLauncher => (
                 "Uninstall Akulav Launcher?".into(),
-                "Removes the launcher, its app-menu entry and shortcuts. The launcher closes afterwards.".into(),
+                "Removes the launcher and its shortcuts. The launcher closes afterwards.".into(),
                 true,
                 "Uninstall",
             ),
         };
-        let uninstalling = matches!(confirm, Confirm::UninstallLauncher);
+        let uninstalling = matches!(confirm, Confirm::UninstallLauncher) && !install::UNINSTALL_ASKS_ABOUT_DATA;
         let delete_data = &mut self.uninstall_delete_data;
         let mut result: Option<bool> = None;
         let modal = egui::Modal::new(Id::new("confirm")).frame(
@@ -825,17 +847,20 @@ impl LauncherApp {
                         self.reload_modpacks();
                         self.toast(ToastKind::Success, "Settings reset", "");
                     }
-                    #[cfg(target_os = "linux")]
-                    Confirm::UninstallLauncher => match crate::launcher::selfupdate::uninstall_now(self.uninstall_delete_data) {
-                        Ok(()) => {
-                            self.uninstalled = true;
-                            self.settings_dirty = None;
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    Confirm::UninstallLauncher => {
+                        // Windows keeps data unless its uninstaller is told otherwise: save first.
+                        if install::UNINSTALL_ASKS_ABOUT_DATA {
+                            self.save_settings_now();
                         }
-                        Err(e) => self.toast(ToastKind::Error, "Could not uninstall", format!("{e:#}")),
-                    },
-                    #[cfg(not(target_os = "linux"))]
-                    Confirm::UninstallLauncher => {}
+                        match install::uninstall(self.uninstall_delete_data) {
+                            Ok(()) => {
+                                self.skip_save = true;
+                                self.settings_dirty = None;
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                            Err(e) => self.toast(ToastKind::Error, "Could not uninstall", format!("{e:#}")),
+                        }
+                    }
                 }
             }
         }
@@ -908,7 +933,12 @@ impl LauncherApp {
                 });
             });
             ui.add_space(6.0);
-            ui.label(RichText::new(format!("You have {}. The update downloads in the background and replaces this launcher in place — no installer, nothing to click through.", update::CURRENT_VERSION)).color(MUTED));
+            let how = if cfg!(windows) {
+                "The update downloads in the background, then installs into the same folder and restarts the launcher. Nothing to click through."
+            } else {
+                "The update downloads in the background and replaces this launcher in place. Nothing to click through."
+            };
+            ui.label(RichText::new(format!("You have {}. {how}", update::CURRENT_VERSION)).color(MUTED));
             ui.add_space(14.0);
             match &self.update {
                 UpdateState::Available(_) | UpdateState::None => {
@@ -951,8 +981,11 @@ impl LauncherApp {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if primary_button(ui, &format!("{}  Restart & update", ph::ARROW_CLOCKWISE), vec2(190.0, 38.0), !busy).clicked() {
                                 self.save_settings_now();
-                                match crate::launcher::selfupdate::apply_update_and_restart(&path) {
-                                    Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                                match install::apply_update(&path) {
+                                    Ok(()) => {
+                                        self.skip_save = true;
+                                        ctx.send_viewport_cmd(egui::ViewportCommand::Close)
+                                    }
                                     Err(e) => {
                                         self.update = UpdateState::Failed { info: info.clone(), error: format!("{e:#}") };
                                     }
@@ -983,6 +1016,119 @@ impl LauncherApp {
         });
         if close || resp.should_close() {
             self.show_update_dialog = false;
+        }
+    }
+
+    /// Linux/macOS, started outside the install folder: install (or update the installed copy)
+    /// into a folder of the user's choice, or just run from here.
+    fn install_screen(&mut self, ui: &mut egui::Ui) {
+        let offer = self.install_offer.clone();
+        let updating = matches!(offer, Offer::Update { .. });
+        let (mut go, mut skip) = (false, false);
+        ui.add_space((ui.available_height() * 0.5 - 200.0).max(24.0));
+        ui.vertical_centered(|ui| {
+            Frame::new()
+                .fill(SURFACE)
+                .stroke(Stroke::new(1.0_f32, BORDER))
+                .corner_radius(CornerRadius::same(R_LG))
+                .inner_margin(Margin::same(28))
+                .show(ui, |ui| {
+                    ui.set_width(520.0_f32.min(ui.available_width()));
+                    ui.with_layout(Layout::top_down(Align::Min), |ui| {
+                        ui.horizontal(|ui| {
+                            if let Some(icon) = &self.app_icon {
+                                ui.add(egui::Image::new(icon).fit_to_exact_size(vec2(46.0, 46.0)));
+                            }
+                            ui.vertical(|ui| {
+                                label_kicker(ui, &format!("Version {}  ·  made by {}", update::CURRENT_VERSION, update::AUTHOR));
+                                let title = if updating { "Update Akulav Launcher" } else { "Install Akulav Launcher" };
+                                ui.label(RichText::new(title).font(bold(20.0)));
+                            });
+                        });
+                        ui.add_space(10.0);
+                        match &offer {
+                            Offer::Install { .. } => {
+                                ui.label(
+                                    RichText::new("Choose a folder. The launcher and everything it downloads (modpacks, worlds, Java) go there, and updates keep using it.")
+                                        .color(MUTED),
+                                );
+                                ui.add_space(14.0);
+                                ui.label(RichText::new("Install folder").font(semibold(13.0)));
+                                ui.add_space(4.0);
+                                let edit = egui::TextEdit::singleline(&mut self.install_dir_edit)
+                                    .desired_width(f32::INFINITY)
+                                    .font(regular(13.5))
+                                    .margin(Margin::symmetric(10, 8));
+                                if ui.add(edit).changed() {
+                                    self.install_error = None;
+                                }
+                                ui.add_space(4.0);
+                                let extras = if cfg!(target_os = "macos") {
+                                    "Creates Akulav Launcher.app in this folder."
+                                } else {
+                                    "Also adds an app-menu entry, a Desktop shortcut and the akulav-launcher command."
+                                };
+                                ui.label(RichText::new(extras).font(regular(12.0)).color(FAINT));
+                            }
+                            Offer::Update { root, installed } => {
+                                let from = installed.as_deref().map(|v| format!("version {v}")).unwrap_or_else(|| "an older version".into());
+                                ui.label(
+                                    RichText::new(format!(
+                                        "Akulav Launcher {from} is installed in {}. Update it to {}? Your modpacks, worlds and settings stay where they are.",
+                                        root.display(),
+                                        update::CURRENT_VERSION
+                                    ))
+                                    .color(MUTED),
+                                );
+                            }
+                            Offer::None => {}
+                        }
+                        if let Some(err) = &self.install_error {
+                            ui.add_space(8.0);
+                            ui.label(RichText::new(err).font(regular(12.5)).color(ACCENT_HI));
+                        }
+                        ui.add_space(20.0);
+                        ui.horizontal(|ui| {
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                let label = if updating { format!("{}  Update", ph::ARROW_CIRCLE_UP) } else { format!("{}  Install", ph::DOWNLOAD_SIMPLE) };
+                                if primary_button(ui, &label, vec2(150.0, 38.0), true).clicked() {
+                                    go = true;
+                                }
+                                if ghost_button(ui, "", "Just run it").on_hover_text("Run this copy without installing it").clicked() {
+                                    skip = true;
+                                }
+                            });
+                        });
+                    });
+                });
+        });
+        if go {
+            self.click();
+            self.run_install(ui.ctx());
+        } else if skip {
+            self.click();
+            self.install_offer = Offer::None;
+            self.start_normally();
+        }
+    }
+
+    fn run_install(&mut self, ctx: &egui::Context) {
+        let result = match self.install_offer.clone() {
+            Offer::Install { .. } => install::parse_install_dir(&self.install_dir_edit)
+                .and_then(|dir| install::install_and_launch(&dir, &["--installed"]).map_err(|e| format!("Could not install: {e:#}"))),
+            Offer::Update { root, installed } => {
+                let from = installed.unwrap_or_default();
+                let args: Vec<&str> = if from.is_empty() { Vec::new() } else { vec!["--updated-from", from.as_str()] };
+                install::install_and_launch(&root, &args).map_err(|e| format!("Could not update: {e:#}"))
+            }
+            Offer::None => return,
+        };
+        match result {
+            Ok(()) => {
+                self.skip_save = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Err(e) => self.install_error = Some(e),
         }
     }
 
@@ -1024,6 +1170,16 @@ impl eframe::App for LauncherApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_events(ctx);
+        if self.install_offer != Offer::None {
+            egui::TopBottomPanel::top("title_bar")
+                .exact_height(42.0)
+                .frame(Frame::new().fill(SURFACE))
+                .show(ctx, |ui| self.title_bar(ui));
+            egui::CentralPanel::default().frame(Frame::new().fill(BG)).show(ctx, |ui| self.install_screen(ui));
+            self.toasts_ui(ctx);
+            self.resize_handles(ctx);
+            return;
+        }
         self.tick_skin_lookup(ctx);
         if self.last_update_check.elapsed() > Duration::from_secs(2 * 3600) {
             self.last_update_check = Instant::now();
@@ -1083,7 +1239,7 @@ impl eframe::App for LauncherApp {
         if self.job.is_some() || self.game.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
-        if let Some(t) = self.settings_dirty.filter(|_| !self.uninstalled) {
+        if let Some(t) = self.settings_dirty.filter(|_| !self.skip_save) {
             if t.elapsed() > Duration::from_millis(600) {
                 self.save_settings_now();
             } else {
@@ -1096,7 +1252,7 @@ impl eframe::App for LauncherApp {
         if let Some(j) = &self.job {
             j.cancel.cancel();
         }
-        if !self.uninstalled {
+        if !self.skip_save && self.install_offer == Offer::None {
             self.save_settings_now();
         }
     }

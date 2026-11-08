@@ -1,68 +1,49 @@
-//! Launcher update check via `version.txt`:
-//! line 1 = latest version, line 2 = direct URL of the new `AkulavLauncher.exe`,
-//! optional line 3 = its SHA-256. Installing is done by [`super::selfupdate`].
+//! Launcher update check against GitHub releases.
+//!
+//! Every release carries exactly one file per OS plus `SHA256SUMS.txt`:
+//!
+//! | OS            | asset                        | applied by                                   |
+//! | ------------- | ---------------------------- | -------------------------------------------- |
+//! | Windows x64   | `AkulavLauncher-setup.exe`   | running the setup silently in update mode    |
+//! | Linux x64     | `AkulavLauncher-linux-x64`   | swapping the binary in the install folder    |
+//! | macOS arm64   | `AkulavLauncher-macos-arm64` | swapping the binary inside the app bundle    |
+//!
+//! An update is only offered when the release has a checksum for this OS's file. Downloading and
+//! applying is done by [`super::install`].
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use serde::Deserialize;
 
 use super::net;
 
-pub const VERSION_URL: &str = "https://akulav.com/shared/5ce6926c3dda5f322df1ac59";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const AUTHOR: &str = "Akulav";
 pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
+pub const LATEST_RELEASE_API: &str = "https://api.github.com/repos/Akulav/akulav-mc-launcher/releases/latest";
+
+pub const ASSET_WINDOWS: &str = "AkulavLauncher-setup.exe";
+pub const ASSET_LINUX: &str = "AkulavLauncher-linux-x64";
+pub const ASSET_MACOS: &str = "AkulavLauncher-macos-arm64";
+pub const ASSET_SUMS: &str = "SHA256SUMS.txt";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateInfo {
     pub version: String,
     pub url: String,
-    pub sha256: Option<String>,
+    pub sha256: String,
 }
 
-/// Name of this platform in `version.txt` platform lines.
-pub fn platform_tag() -> &'static str {
-    if cfg!(windows) {
-        "windows"
-    } else if cfg!(target_os = "macos") {
-        "macos"
+/// The release file for this OS, or `None` where no build is published.
+pub fn this_os_asset() -> Option<&'static str> {
+    if cfg!(all(windows, target_arch = "x86_64")) {
+        Some(ASSET_WINDOWS)
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        Some(ASSET_LINUX)
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        Some(ASSET_MACOS)
     } else {
-        "linux"
+        None
     }
-}
-
-fn is_sha256(s: &str) -> bool {
-    s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
-}
-
-/// Parse `version.txt` for this platform:
-///
-/// ```text
-/// 10.1.0                                   <- latest version
-/// https://…/AkulavLauncher.exe             <- Windows exe (also what the old 9.x launcher downloads)
-/// <sha256 of the exe>                      <- optional
-/// linux https://…/AkulavLauncher-linux-x86_64 <sha256>   <- optional per-platform lines
-/// ```
-///
-/// Windows uses a `windows …` line if present, otherwise line 2. Other platforms only update
-/// when their own line exists, so a Linux launcher is never offered the Windows exe.
-pub fn parse_version_file(text: &str) -> Option<UpdateInfo> {
-    parse_version_file_for(text, platform_tag())
-}
-
-pub fn parse_version_file_for(text: &str, platform: &str) -> Option<UpdateInfo> {
-    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-    let version = lines.first()?.trim_start_matches('\u{feff}').to_string();
-    let default_url = lines.get(1)?.to_string();
-    let default_sha = lines.get(2).filter(|l| is_sha256(l)).map(|s| s.to_string());
-
-    for line in lines.iter().skip(2) {
-        let mut parts = line.split_whitespace();
-        if parts.next().is_some_and(|tag| tag.eq_ignore_ascii_case(platform)) {
-            let url = parts.next()?.to_string();
-            let sha256 = parts.next().filter(|s| is_sha256(s)).map(str::to_string);
-            return Some(UpdateInfo { version, url, sha256 });
-        }
-    }
-    (platform == "windows").then_some(UpdateInfo { version, url: default_url, sha256: default_sha })
 }
 
 /// Compare dotted versions numerically ("10.0.0" > "9.0.0"). Non-numeric parts compare as 0.
@@ -83,50 +64,62 @@ pub fn is_newer(remote: &str, current: &str) -> bool {
     false
 }
 
-pub async fn check(client: &reqwest::Client) -> Result<Option<UpdateInfo>> {
-    // AKULAV_UPDATE_URL lets you point a test build at a staging version file.
-    let url = std::env::var("AKULAV_UPDATE_URL").unwrap_or_else(|_| VERSION_URL.to_string());
-    let text = net::get_text(client, &url).await?;
-    if text.lines().filter(|l| !l.trim().is_empty()).count() < 2 {
-        return Err(anyhow!("version file is malformed"));
+/// Find `name` in a `SHA256SUMS.txt` (`<hex>  <name>` or `<hex> *<name>`).
+pub fn find_sum(sums: &str, name: &str) -> Option<String> {
+    sums.lines().find_map(|l| {
+        let mut it = l.split_whitespace();
+        let hash = it.next()?;
+        let file = it.next()?.trim_start_matches('*');
+        (file == name && hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit())).then(|| hash.to_ascii_lowercase())
+    })
+}
+
+#[derive(Deserialize)]
+struct GhAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+#[derive(Deserialize)]
+struct GhRelease {
+    tag_name: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
+    #[serde(default)]
+    assets: Vec<GhAsset>,
+}
+
+/// Asset URLs of `release` for `asset`, or `None` when the release isn't usable.
+fn pick(release: &GhRelease, asset: &str) -> Option<(String, String, String)> {
+    if release.draft || release.prerelease {
+        return None;
     }
-    // None = no build published for this platform yet.
-    let Some(info) = parse_version_file(&text) else { return Ok(None) };
-    Ok(is_newer(&info.version, CURRENT_VERSION).then_some(info))
+    let file = release.assets.iter().find(|a| a.name == asset)?;
+    let sums = release.assets.iter().find(|a| a.name == ASSET_SUMS)?;
+    let version = release.tag_name.trim_start_matches(['v', 'V']).to_string();
+    Some((version, file.browser_download_url.clone(), sums.browser_download_url.clone()))
+}
+
+/// Newer release for this OS, if any.
+pub async fn check(client: &reqwest::Client) -> Result<Option<UpdateInfo>> {
+    let Some(asset) = this_os_asset() else { return Ok(None) };
+    // AKULAV_UPDATE_URL points a test build at another releases/latest-style JSON document.
+    let url = std::env::var("AKULAV_UPDATE_URL").unwrap_or_else(|_| LATEST_RELEASE_API.to_string());
+    let release: GhRelease = net::get_json(client, &url).await.context("could not reach GitHub")?;
+    let Some((version, file_url, sums_url)) = pick(&release, asset) else { return Ok(None) };
+    if !is_newer(&version, CURRENT_VERSION) {
+        return Ok(None);
+    }
+    let sums = net::get_text(client, &sums_url).await?;
+    let sha256 = find_sum(&sums, asset).ok_or_else(|| anyhow!("release {version} has no checksum for {asset}"))?;
+    Ok(Some(UpdateInfo { version, url: file_url, sha256 }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_existing_version_file() {
-        let info = parse_version_file_for("9.0.0\r\nhttps://github.com/Akulav/AkulavMCLauncher/releases/download/9.0.0/AkulavLauncherInstaller.exe\r\n", "windows").unwrap();
-        assert_eq!(info.version, "9.0.0");
-        assert!(info.url.ends_with("AkulavLauncherInstaller.exe"));
-        assert!(parse_version_file_for("9.0.0", "windows").is_none());
-        let sha = "a".repeat(64);
-        let with_hash = parse_version_file_for(&format!("10.1.0\nhttps://x/AkulavLauncher.exe\n{sha}\n"), "windows").unwrap();
-        assert_eq!(with_hash.sha256.as_deref(), Some(sha.as_str()));
-    }
-
-    #[test]
-    fn platform_lines() {
-        let sha = "b".repeat(64);
-        let text = format!("10.1.0\nhttps://x/AkulavLauncher.exe\n{}\nlinux https://x/AkulavLauncher-linux-x86_64 {sha}\n", "a".repeat(64));
-        let win = parse_version_file_for(&text, "windows").unwrap();
-        assert!(win.url.ends_with(".exe"));
-        assert_eq!(win.sha256.as_deref(), Some("a".repeat(64).as_str()));
-        let lin = parse_version_file_for(&text, "linux").unwrap();
-        assert!(lin.url.ends_with("linux-x86_64"));
-        assert_eq!(lin.sha256.as_deref(), Some(sha.as_str()));
-        // No linux line: Linux gets no update rather than the Windows exe.
-        assert!(parse_version_file_for("10.1.0\nhttps://x/AkulavLauncher.exe\n", "linux").is_none());
-        // Linux line without hash, right after the URL.
-        let t = "10.1.0\nhttps://x/a.exe\nlinux https://x/b\n";
-        assert_eq!(parse_version_file_for(t, "linux").unwrap().url, "https://x/b");
-        assert_eq!(parse_version_file_for(t, "windows").unwrap().sha256, None);
-    }
 
     #[test]
     fn version_ordering() {
@@ -135,5 +128,30 @@ mod tests {
         assert!(!is_newer("9.0.0", "10.0.0"), "the old C# release must not 'update' the new launcher");
         assert!(!is_newer("10.0.0", "10.0.0"));
         assert!(is_newer("v11", "10.5.5"));
+    }
+
+    #[test]
+    fn sums_parsing() {
+        let a = "a".repeat(64);
+        let s = format!("{a}  {ASSET_WINDOWS}\n{} *{ASSET_LINUX}\n", "B".repeat(64));
+        assert_eq!(find_sum(&s, ASSET_WINDOWS), Some(a));
+        assert_eq!(find_sum(&s, ASSET_LINUX), Some("b".repeat(64)));
+        assert_eq!(find_sum(&s, ASSET_MACOS), None);
+        assert_eq!(find_sum("zz  x\n", "x"), None);
+    }
+
+    #[test]
+    fn picks_release_assets() {
+        let json = format!(
+            r#"{{"tag_name":"10.3.0","assets":[
+                {{"name":"{ASSET_WINDOWS}","browser_download_url":"https://x/setup.exe"}},
+                {{"name":"{ASSET_SUMS}","browser_download_url":"https://x/sums"}}]}}"#
+        );
+        let r: GhRelease = serde_json::from_str(&json).unwrap();
+        let (v, file, sums) = pick(&r, ASSET_WINDOWS).unwrap();
+        assert_eq!((v.as_str(), file.as_str(), sums.as_str()), ("10.3.0", "https://x/setup.exe", "https://x/sums"));
+        assert!(pick(&r, ASSET_LINUX).is_none(), "no file for this OS: no update");
+        let pre: GhRelease = serde_json::from_str(&json.replace("\"tag_name\"", "\"prerelease\":true,\"tag_name\"")).unwrap();
+        assert!(pick(&pre, ASSET_WINDOWS).is_none());
     }
 }
