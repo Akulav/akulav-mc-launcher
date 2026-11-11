@@ -38,7 +38,9 @@ fn main() -> eframe::Result<()> {
         viewport = viewport.with_icon(icon);
     }
 
-    let options = eframe::NativeOptions { viewport, centered: true, ..Default::default() };
+    // Window size/position live in the launcher's own folder, not in %APPDATA% / ~/.local/share.
+    let persistence_path = launcher::paths::Paths::detect().ok().map(|p| p.root.join(launcher::install::WINDOW_STATE_FILE));
+    let options = eframe::NativeOptions { viewport, centered: true, persistence_path, ..Default::default() };
     eframe::run_native("Akulav Launcher", options, Box::new(move |cc| Ok(Box::new(ui::app::LauncherApp::new(cc, startup)))))
 }
 

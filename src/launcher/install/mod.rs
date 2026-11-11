@@ -40,7 +40,10 @@ pub const EXE_NAME: &str = if cfg!(windows) { "AkulavLauncher.exe" } else { "Aku
 pub const MARKER: &str = ".akulav-install";
 /// Everything the launcher keeps in its data folder. Settings files come last so a half-finished
 /// move never looks like a complete data folder.
-pub const DATA_ENTRIES: &[&str] = &["shared", "instances", "cache", "logs", "modpacks_cache.json", "installed.json", "settings.json"];
+pub const DATA_ENTRIES: &[&str] =
+    &["shared", "instances", "cache", "logs", "modpacks_cache.json", "window.ron", "installed.json", "settings.json"];
+/// Window size and position, kept by the UI toolkit in the data folder (not in the OS's app-data folder).
+pub const WINDOW_STATE_FILE: &str = "window.ron";
 const NEW_SUFFIX: &str = ".new";
 const OLD_SUFFIX: &str = ".old";
 
@@ -120,19 +123,14 @@ fn has_data(dir: &Path) -> bool {
     dir.join("settings.json").is_file() || dir.join("installed.json").is_file()
 }
 
-/// The launcher's data folder (`AKULAV_DATA_DIR` is handled by `Paths::detect`):
-/// portable → next to the program; installed → the install folder; otherwise the old default.
+/// The launcher's data folder (`AKULAV_DATA_DIR` is handled by `Paths::detect`). Always the
+/// folder the launcher lives in: the install folder when installed, otherwise next to the
+/// program. Nothing is ever kept in `%APPDATA%`, `~/.local/share` or other system folders.
 pub fn data_root() -> Option<PathBuf> {
     if portable() {
         return program_root();
     }
-    let legacy = legacy_data_root();
-    match installed_root() {
-        // Old data that could not be moved in (e.g. install folder on another drive) stays in use.
-        Some(root) if !has_data(&root) && legacy.as_deref().is_some_and(has_data) => legacy,
-        Some(root) => Some(root),
-        None => legacy,
-    }
+    installed_root().or_else(program_root)
 }
 
 pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
@@ -173,9 +171,47 @@ pub fn parse_install_dir(text: &str) -> Result<PathBuf, String> {
 // Moving old data into the install folder
 // ---------------------------------------------------------------------------------------------
 
-/// Move [`DATA_ENTRIES`] from `from` to `to` by renaming. If anything fails, everything moved so far
-/// goes back, so data is never split between two folders. Entries already present in `to` are left.
-fn move_data(from: &Path, to: &Path) -> Result<()> {
+fn remove_any(p: &Path) -> std::io::Result<()> {
+    if p.is_dir() {
+        std::fs::remove_dir_all(p)
+    } else {
+        std::fs::remove_file(p)
+    }
+}
+
+/// Copy a file or a whole folder tree.
+fn copy_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            copy_all(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(src, dst).map(|_| ())
+    }
+}
+
+/// Move one file or folder. A rename is instant; when the two folders are on different drives
+/// (e.g. `C:` → `D:`) it is copied and then the original is deleted. A failed copy leaves the
+/// original untouched and removes the partial copy.
+pub(crate) fn move_entry(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if std::fs::rename(src, dst).is_ok() {
+        return Ok(());
+    }
+    if let Err(e) = copy_all(src, dst) {
+        let _ = remove_any(dst);
+        return Err(e);
+    }
+    let _ = remove_any(src);
+    Ok(())
+}
+
+/// Move [`DATA_ENTRIES`] from `from` to `to`, across drives too. If anything fails, everything
+/// moved so far goes back, so data is never split between two folders. Entries already present in
+/// `to` are left. Returns how many entries moved.
+fn move_data(from: &Path, to: &Path) -> Result<usize> {
     std::fs::create_dir_all(to)?;
     let mut moved: Vec<&str> = Vec::new();
     for name in DATA_ENTRIES {
@@ -183,28 +219,30 @@ fn move_data(from: &Path, to: &Path) -> Result<()> {
         if !src.exists() || dst.exists() {
             continue;
         }
-        if let Err(e) = std::fs::rename(&src, &dst) {
+        if let Err(e) = move_entry(&src, &dst) {
             for n in moved.iter().rev() {
-                let _ = std::fs::rename(to.join(n), from.join(n));
+                let _ = move_entry(&to.join(n), &from.join(n));
             }
             return Err(e).with_context(|| format!("could not move {} to {}", src.display(), to.display()));
         }
         moved.push(name);
     }
     let _ = std::fs::remove_dir(from); // only succeeds when nothing else is left
-    Ok(())
+    Ok(moved.len())
 }
 
-/// On the first start of an installed copy, bring data from the pre-11 location along.
+/// On the start of an installed copy, bring data from the pre-11 location (`%APPDATA%\AkulavLauncher`,
+/// `~/.local/share/AkulavLauncher`, …) into the install folder, even when that is on another drive.
 fn migrate_legacy_data(root: &Path) -> Option<String> {
     let legacy = legacy_data_root()?;
-    if same_path(&legacy, root) || has_data(root) || !has_data(&legacy) {
+    if same_path(&legacy, root) || !has_data(&legacy) {
         return None;
     }
-    Some(match move_data(&legacy, root) {
-        Ok(()) => format!("Moved launcher data from {} to {}", legacy.display(), root.display()),
-        Err(e) => format!("Launcher data stays in {} ({e:#})", legacy.display()),
-    })
+    match move_data(&legacy, root) {
+        Ok(0) => None,
+        Ok(_) => Some(format!("Moved launcher data from {} to {}", legacy.display(), root.display())),
+        Err(e) => Some(format!("Could not move old launcher data from {} ({e:#}); it was left there", legacy.display())),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -488,6 +526,18 @@ mod tests {
         std::fs::create_dir_all(b.join("settings.json")).unwrap(); // occupied → skipped, not an error
         move_data(&a, &b).unwrap();
         assert!(b.join("shared").is_dir() && a.join("settings.json").is_file());
+    }
+
+    #[test]
+    fn copies_trees_when_renaming_is_not_possible() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("src");
+        std::fs::create_dir_all(src.join("a/b")).unwrap();
+        std::fs::write(src.join("a/b/f.txt"), b"x").unwrap();
+        copy_all(&src, &d.path().join("dst")).unwrap();
+        assert_eq!(std::fs::read(d.path().join("dst/a/b/f.txt")).unwrap(), b"x");
+        move_entry(&d.path().join("dst"), &d.path().join("moved")).unwrap();
+        assert!(d.path().join("moved/a/b/f.txt").is_file() && !d.path().join("dst").exists());
     }
 
     #[test]

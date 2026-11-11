@@ -173,6 +173,7 @@ async fn prepare(req: &LaunchRequest, paths: &Paths, reporter: &Reporter, cancel
 
     let game_dir = paths.instance_dir(&pack.name);
     std::fs::create_dir_all(&game_dir)?;
+    std::fs::create_dir_all(paths.java_tmp())?;
     let opts = LaunchOptions {
         username: req.username.clone(),
         ram_mb: req.settings.ram_mb,
@@ -182,6 +183,7 @@ async fn prepare(req: &LaunchRequest, paths: &Paths, reporter: &Reporter, cancel
         assets_dir: paths.assets(),
         libraries_dir: paths.libraries(),
         natives_dir,
+        temp_dir: paths.java_tmp(),
         classpath,
     };
     let args = build_arguments(&rv, &opts, &env)?;

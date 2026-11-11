@@ -58,6 +58,11 @@ impl Paths {
     pub fn installed_file(&self) -> PathBuf {
         self.root.join("installed.json")
     }
+    /// Java's temp folder (`-Djava.io.tmpdir`) for the game and loader installers, so nothing
+    /// they extract lands in the system temp folder.
+    pub fn java_tmp(&self) -> PathBuf {
+        self.cache.join("tmp")
+    }
     pub fn modpack_cache_file(&self) -> PathBuf {
         self.root.join("modpacks_cache.json")
     }

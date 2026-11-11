@@ -167,10 +167,12 @@ pub async fn install_loader(
 
             reporter.stage(format!("Running {display} installer"));
             let target = paths.shared.to_string_lossy().to_string();
+            std::fs::create_dir_all(paths.java_tmp())?;
+            let tmpdir = format!("-Djava.io.tmpdir={}", paths.java_tmp().to_string_lossy());
             let mut ok = false;
             let mut last_output = String::new();
             for flag in ["--installClient", "--install-client"] {
-                let args = vec!["-jar".to_string(), installer.to_string_lossy().to_string(), flag.to_string(), target.clone()];
+                let args = vec![tmpdir.clone(), "-jar".to_string(), installer.to_string_lossy().to_string(), flag.to_string(), target.clone()];
                 let (code, tail) = run_logged(&java, &args, &paths.cache, reporter, gi.cancel, LogSource::Installer).await?;
                 last_output = tail;
                 if code == 0 {

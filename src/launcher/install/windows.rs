@@ -59,8 +59,10 @@ pub fn install_and_launch(_root: &Path, _args: &[&str]) -> Result<()> {
     bail!("on Windows, install with {ASSET_WINDOWS}")
 }
 
+/// The setup is downloaded into the launcher's own folder (`cache\update`), never `%TEMP%`.
 pub fn staging_path() -> Result<PathBuf> {
-    let dir = std::env::temp_dir().join("AkulavLauncher-update");
+    let root = super::data_root().context("unknown launcher folder")?;
+    let dir = root.join("cache").join("update");
     std::fs::create_dir_all(&dir)?;
     Ok(dir.join(ASSET_WINDOWS))
 }

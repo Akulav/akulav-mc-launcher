@@ -89,7 +89,9 @@ Filename: "{app}\{#AppExe}"; Parameters: "--updated-from ""{param:FROM|}"""; Wor
 Type: files; Name: "{app}\{#Marker}"
 Type: files; Name: "{app}\AkulavLauncher.old.exe"
 Type: files; Name: "{app}\AkulavLauncher.new.exe"
-; Window size and position remembered by the UI toolkit.
+; The downloaded update setup (in-app updates keep it in the launcher's own folder).
+Type: filesandordirs; Name: "{app}\cache\update"
+; Window size and position remembered by the UI toolkit before 11.0.1 (now window.ron in {app}).
 Type: filesandordirs; Name: "{userappdata}\akulav-launcher"
 
 [Code]
@@ -158,6 +160,7 @@ begin
   DelTree(Dir + '\cache', True, True, True);
   DelTree(Dir + '\logs', True, True, True);
   DeleteFile(Dir + '\modpacks_cache.json');
+  DeleteFile(Dir + '\window.ron');
   DeleteFile(Dir + '\installed.json');
   DeleteFile(Dir + '\settings.json');
   RemoveDir(Dir);

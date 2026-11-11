@@ -17,6 +17,8 @@ pub struct LaunchOptions {
     pub assets_dir: PathBuf,
     pub libraries_dir: PathBuf,
     pub natives_dir: PathBuf,
+    /// Java's temp folder, inside the launcher's folder.
+    pub temp_dir: PathBuf,
     pub classpath: Vec<PathBuf>,
 }
 
@@ -141,7 +143,11 @@ pub fn build_arguments(rv: &ResolvedVersion, opts: &LaunchOptions, env: &Env) ->
         ("resolution_height", h.to_string()),
     ]);
 
-    let mut args = vec![format!("-Xmx{}M", opts.ram_mb), format!("-Xms{}M", opts.ram_mb.min(1024))];
+    let mut args = vec![
+        format!("-Xmx{}M", opts.ram_mb),
+        format!("-Xms{}M", opts.ram_mb.min(1024)),
+        format!("-Djava.io.tmpdir={}", path_str(&opts.temp_dir)),
+    ];
     args.extend(split_args(&opts.extra_jvm_args));
 
     match v.arguments.as_ref().filter(|a| !a.jvm.is_empty()) {
@@ -223,6 +229,7 @@ mod tests {
             assets_dir: "/a".into(),
             libraries_dir: "/l".into(),
             natives_dir: "/n".into(),
+            temp_dir: "/t".into(),
             classpath: vec!["/l/x.jar".into(), "/v/c.jar".into()],
         };
         let env = Env::current().with_feature("has_custom_resolution", true);

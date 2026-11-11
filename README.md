@@ -118,9 +118,12 @@ It asks for an install folder (default `~/Applications/Akulav Launcher`) and cre
 
 ## 📁 Where your data lives
 
-**In the install folder you chose**, next to the program. The folder is remembered (Windows: by the setup; Linux/macOS:
-in `~/.config/akulav-launcher/install-dir` or `~/Library/Application Support/akulav-launcher/install-dir`), so updates
-keep everything in place. Data from launchers before 11.0 (`%APPDATA%\AkulavLauncher`) is moved in on the first start.
+**In the install folder you chose**, next to the program. Install on `D:\Games\AkulavLauncher` and every modpack, world,
+Java runtime and download goes to `D:\Games\AkulavLauncher` too; nothing goes to `%APPDATA%`, `~/.local/share` or other
+system folders. The folder is remembered (Windows: by the setup; Linux/macOS: in `~/.config/akulav-launcher/install-dir`
+or `~/Library/Application Support/akulav-launcher/install-dir`), so updates keep everything in place. Data from
+launchers before 11.0 (`%APPDATA%\AkulavLauncher`) is moved in on the first start, also when the install folder is on
+another drive.
 
 | Path | Contents |
 | :-- | :-- |
@@ -128,7 +131,8 @@ keep everything in place. Data from launchers before 11.0 (`%APPDATA%\AkulavLaun
 | `installed.json` | installed pack versions |
 | `shared/` | versions, libraries, assets, Java runtimes |
 | `instances/<pack>/` | each pack's game folder (mods, config, saves…) |
-| `cache/` | temporary downloads |
+| `cache/` | temporary downloads (including a downloaded launcher update) and Java's temp folder |
+| `window.ron` | window size and position |
 | `.akulav-install` | marks the install folder (holds the installed version) |
 
 Set `AKULAV_DATA_DIR` to use a different data folder.
@@ -179,7 +183,7 @@ Supported `API` values: a vanilla id (`1.21.1`), `neoforge-<version>`, `<mc>-for
 
 Releases are fully automated by [`.github/workflows/build.yml`](.github/workflows/build.yml):
 
-1. Bump `version` in `Cargo.toml`.
+1. Bump `version` in `Cargo.toml` (and add a section to [`CHANGELOG.md`](CHANGELOG.md)).
 2. Push to `main`.
 3. If no release with that version exists, CI tests and builds all three systems, tags the commit and publishes a GitHub
    release with exactly three programs, `AkulavLauncher-setup.exe`, `AkulavLauncher-linux-x64` and
@@ -224,7 +228,7 @@ cargo build --release
 The launcher is `target/release/AkulavLauncher(.exe)`. The Windows setup needs [Inno Setup 6](https://jrsoftware.org/isinfo.php):
 
 ```bash
-iscc /DAppVersion=11.0.0 /DSourceExe=%CD%\target\release\AkulavLauncher.exe installer\akulav-launcher.iss
+iscc /DAppVersion=11.0.1 /DSourceExe=%CD%\target\release\AkulavLauncher.exe installer\akulav-launcher.iss
 ```
 
 It writes `dist\AkulavLauncher-setup.exe`. For a Linux binary that runs on older distros:
