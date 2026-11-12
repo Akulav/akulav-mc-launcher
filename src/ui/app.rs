@@ -303,11 +303,7 @@ impl LauncherApp {
     }
 
     pub fn list_url(&self) -> String {
-        self.settings
-            .modpack_list_url
-            .clone()
-            .filter(|u| !u.trim().is_empty())
-            .unwrap_or_else(|| DEFAULT_MODPACK_LIST_URL.to_string())
+        self.settings.modpack_list_url.clone().filter(|u| !u.trim().is_empty()).unwrap_or_else(|| DEFAULT_MODPACK_LIST_URL.to_string())
     }
 
     pub fn reload_modpacks(&mut self) {
@@ -339,13 +335,7 @@ impl LauncherApp {
     }
 
     pub fn toast_with(&mut self, kind: ToastKind, title: impl Into<String>, body: impl Into<String>, label: &str, action: ToastAction) {
-        self.toasts.push(Toast {
-            kind,
-            title: title.into(),
-            body: body.into(),
-            created: Instant::now(),
-            action: Some((label.to_string(), action)),
-        });
+        self.toasts.push(Toast { kind, title: title.into(), body: body.into(), created: Instant::now(), action: Some((label.to_string(), action)) });
     }
 
     /// Start preparing (and optionally launching) the selected pack.
@@ -353,7 +343,9 @@ impl LauncherApp {
         if self.busy() {
             return;
         }
-        let Some(pack) = self.selected_pack().cloned() else { return };
+        let Some(pack) = self.selected_pack().cloned() else {
+            return;
+        };
         if kind == JobKind::Launch {
             if let Err(msg) = validate_username(&self.settings.username) {
                 self.toast(ToastKind::Warning, "Check your nickname", msg);
@@ -376,14 +368,8 @@ impl LauncherApp {
             repair: kind == JobKind::Repair,
             launch: kind == JobKind::Launch,
         };
-        self.job = Some(JobState {
-            cancel: cancel.clone(),
-            pack: pack.name.clone(),
-            kind,
-            stage: "Starting".into(),
-            progress: None,
-            rate: RateMeter::default(),
-        });
+        self.job =
+            Some(JobState { cancel: cancel.clone(), pack: pack.name.clone(), kind, stage: "Starting".into(), progress: None, rate: RateMeter::default() });
         self.last_crash = None;
         self.reporter.info(format!(
             "{} {} {} as {}",
@@ -435,7 +421,13 @@ impl LauncherApp {
                     if matches!(self.update, UpdateState::None | UpdateState::Available(_) | UpdateState::Failed { .. }) {
                         self.reporter.info(format!("Launcher update available: {}", info.version));
                         if !matches!(&self.update, UpdateState::Available(i) if i.version == info.version) {
-                            self.toast_with(ToastKind::Info, format!("Launcher {} is available", info.version), "Update in one click, no installer needed.", "See update", ToastAction::ShowUpdate);
+                            self.toast_with(
+                                ToastKind::Info,
+                                format!("Launcher {} is available", info.version),
+                                "Update in one click, no installer needed.",
+                                "See update",
+                                ToastAction::ShowUpdate,
+                            );
                         }
                         self.update = UpdateState::Available(info);
                     }
@@ -561,68 +553,48 @@ impl LauncherApp {
     // Chrome
     // -----------------------------------------------------------------------------------------
 
-    fn title_bar(&mut self, ui: &mut egui::Ui) {
-        let rect = ui.max_rect();
-        let drag = ui.interact(rect, Id::new("title_drag"), Sense::click_and_drag());
-        if drag.drag_started_by(egui::PointerButton::Primary) {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-        }
-        if drag.double_clicked() {
-            let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
-        }
-
-        ui.horizontal_centered(|ui| {
-            ui.add_space(14.0);
-            if let Some(icon) = &self.app_icon {
-                ui.add(egui::Image::new(icon).fit_to_exact_size(vec2(20.0, 20.0)));
+    /// Update status, under the navigation (the system draws the title bar now).
+    fn update_chip(&mut self, ui: &mut egui::Ui) {
+        let label = match &self.update {
+            UpdateState::None => None,
+            UpdateState::Available(i) => Some((format!("Update {} available", i.version), GOLD)),
+            UpdateState::Downloading { done, total, .. } => {
+                Some((if *total > 0 { format!("Downloading {:.0}%", *done as f32 * 100.0 / *total as f32) } else { "Downloading update…".into() }, BLUE))
             }
-            ui.add_space(4.0);
-            ui.label(RichText::new("AKULAV").font(black(13.5)).color(TEXT).extra_letter_spacing(1.5));
-            ui.label(RichText::new("LAUNCHER").font(semibold(13.0)).color(MUTED).extra_letter_spacing(1.5));
-
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                let close = window_button(ui, ph::X, true);
-                if close.clicked() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-                let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-                if window_button(ui, if max { ph::CORNERS_IN } else { ph::CORNERS_OUT }, false).clicked() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
-                }
-                if window_button(ui, ph::MINUS, false).clicked() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                }
-                ui.add_space(10.0);
-                let label = match &self.update {
-                    UpdateState::None => None,
-                    UpdateState::Available(i) => Some((format!("Update {} available", i.version), GOLD)),
-                    UpdateState::Downloading { done, total, .. } => Some((
-                        if *total > 0 { format!("Downloading update {:.0}%", *done as f32 * 100.0 / *total as f32) } else { "Downloading update…".into() },
-                        BLUE,
-                    )),
-                    UpdateState::Ready { .. } => Some(("Restart to update".into(), GREEN)),
-                    UpdateState::Failed { .. } => Some(("Update failed".into(), ACCENT_HI)),
-                };
-                if let Some((text, color)) = label {
-                    let r = chip(ui, ph::ARROW_CIRCLE_UP, &text, color)
-                        .interact(Sense::click())
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if r.clicked() {
-                        self.show_update_dialog = true;
-                    }
-                }
+            UpdateState::Ready { .. } => Some(("Restart to update".into(), GREEN)),
+            UpdateState::Failed { .. } => Some(("Update failed".into(), ACCENT_HI)),
+        };
+        if let Some((text, color)) = label {
+            ui.add_space(8.0);
+            let r = chip(ui, ph::ARROW_CIRCLE_UP, &text, color).interact(Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if r.clicked() {
+                self.show_update_dialog = true;
+            }
+        }
+    }
+    fn sidebar(&mut self, ui: &mut egui::Ui) {
+        // Brand, like Hyve's sidebar header.
+        ui.add_space(2.0);
+        ui.horizontal(|ui| {
+            if let Some(icon) = &self.app_icon {
+                ui.add(egui::Image::new(icon).fit_to_exact_size(vec2(34.0, 34.0)));
+            }
+            ui.add_space(2.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.label(RichText::new("Akulav Launcher").font(bold(15.5)).color(ACCENT_HI));
+                ui.label(RichText::new("Minecraft modpacks").font(regular(11.5)).color(MUTED));
             });
         });
-        ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0_f32, BORDER));
-    }
-
-    fn sidebar(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(18.0);
+        ui.add_space(12.0);
+        let y = ui.cursor().top();
+        ui.painter().hline(ui.max_rect().x_range(), y, Stroke::new(1.0_f32, GLASS_BORDER));
+        ui.add_space(12.0);
         let errors = self.unseen_errors;
         let playing = self.game.is_some();
-        for (page, icon, label) in [(Page::Home, ph::HOUSE, "Play"), (Page::Console, ph::TERMINAL_WINDOW, "Console"), (Page::Settings, ph::GEAR_SIX, "Settings")] {
+        for (page, icon, label) in
+            [(Page::Home, ph::HOUSE, "Play"), (Page::Console, ph::TERMINAL_WINDOW, "Console"), (Page::Settings, ph::GEAR_SIX, "Settings")]
+        {
             let badge = match page {
                 Page::Console if errors > 0 => Some((errors.min(99).to_string(), ACCENT)),
                 Page::Console if playing => Some(("●".to_string(), GREEN)),
@@ -638,13 +610,14 @@ impl LauncherApp {
             }
             ui.add_space(4.0);
         }
+        self.update_chip(ui);
 
         // Profile card pinned to the bottom.
         let bottom = ui.max_rect().bottom();
         let card_h = 68.0;
-        let card = Rect::from_min_max(pos2(ui.max_rect().left() + 12.0, bottom - card_h - 34.0), pos2(ui.max_rect().right() - 12.0, bottom - 34.0));
-        ui.painter().rect_filled(card, CornerRadius::same(R_MD), SURFACE_2);
-        ui.painter().rect_stroke(card, CornerRadius::same(R_MD), Stroke::new(1.0_f32, BORDER), StrokeKind::Inside);
+        let card = Rect::from_min_max(pos2(ui.max_rect().left(), bottom - card_h - 30.0), pos2(ui.max_rect().right(), bottom - 30.0));
+        ui.painter().rect_filled(card, CornerRadius::same(R_MD), with_alpha(Color32::WHITE, 10));
+        ui.painter().rect_stroke(card, CornerRadius::same(R_MD), Stroke::new(1.0_f32, GLASS_BORDER), StrokeKind::Inside);
         let avatar = Rect::from_min_size(card.min + vec2(8.0, 8.0), vec2(52.0, 52.0));
         let head_resp = ui.interact(avatar, Id::new("sidebar_head"), Sense::click());
         let hover = ui.ctx().animate_bool_with_time(head_resp.id, head_resp.hovered(), 0.3);
@@ -685,7 +658,7 @@ impl LauncherApp {
         ui.painter().galley(sub_rect.min, galley, sub.1);
 
         // Credit line: version and author, links to the repository.
-        let credit = Rect::from_center_size(pos2(ui.max_rect().center().x, bottom - 16.0), vec2(ui.max_rect().width() - 24.0, 20.0));
+        let credit = Rect::from_center_size(pos2(ui.max_rect().center().x, bottom - 10.0), vec2(ui.max_rect().width(), 20.0));
         let credit_resp = ui.interact(credit, Id::new("sidebar_credit"), Sense::click());
         let credit_color = if credit_resp.hovered() { MUTED } else { FAINT };
         ui.painter().text(
@@ -724,36 +697,33 @@ impl LauncherApp {
             let h = 46.0 + if t.body.is_empty() { 0.0 } else { body_galley.size().y + 4.0 } + if t.action.is_some() { 30.0 } else { 0.0 };
             let rect = Rect::from_min_size(pos2(screen.right() - width - 20.0, y), vec2(width, h));
             y += h + 10.0;
-            egui::Area::new(Id::new(("toast", t.created)))
-                .order(egui::Order::Tooltip)
-                .fixed_pos(rect.min)
-                .show(ctx, |ui| {
-                    ui.set_opacity(alpha);
-                    let p = ui.painter();
-                    p.rect_filled(rect.translate(vec2(0.0, 4.0)), CornerRadius::same(R_MD), Color32::from_black_alpha(90));
-                    p.rect_filled(rect, CornerRadius::same(R_MD), SURFACE_2);
-                    p.rect_stroke(rect, CornerRadius::same(R_MD), Stroke::new(1.0_f32, BORDER), StrokeKind::Inside);
-                    p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 10.0), vec2(3.0, rect.height() - 20.0)), CornerRadius::same(2), color);
-                    p.text(rect.min + vec2(18.0, 23.0), Align2::LEFT_CENTER, icon, regular(18.0), color);
-                    p.text(rect.min + vec2(46.0, 23.0), Align2::LEFT_CENTER, &t.title, semibold(14.0), TEXT);
-                    if !t.body.is_empty() {
-                        p.galley(rect.min + vec2(46.0, 38.0), body_galley.clone(), MUTED);
+            egui::Area::new(Id::new(("toast", t.created))).order(egui::Order::Tooltip).fixed_pos(rect.min).show(ctx, |ui| {
+                ui.set_opacity(alpha);
+                let p = ui.painter();
+                p.rect_filled(rect.translate(vec2(0.0, 4.0)), CornerRadius::same(R_MD), Color32::from_black_alpha(90));
+                p.rect_filled(rect, CornerRadius::same(R_MD), SURFACE_2);
+                p.rect_stroke(rect, CornerRadius::same(R_MD), Stroke::new(1.0_f32, BORDER), StrokeKind::Inside);
+                p.rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 10.0), vec2(3.0, rect.height() - 20.0)), CornerRadius::same(2), color);
+                p.text(rect.min + vec2(18.0, 23.0), Align2::LEFT_CENTER, icon, regular(18.0), color);
+                p.text(rect.min + vec2(46.0, 23.0), Align2::LEFT_CENTER, &t.title, semibold(14.0), TEXT);
+                if !t.body.is_empty() {
+                    p.galley(rect.min + vec2(46.0, 38.0), body_galley.clone(), MUTED);
+                }
+                let close = Rect::from_center_size(pos2(rect.right() - 20.0, rect.top() + 23.0), vec2(22.0, 22.0));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(close));
+                if icon_button(&mut child, ph::X, 22.0, "").clicked() {
+                    remove = Some(i);
+                }
+                if let Some((label, action)) = &t.action {
+                    let r = Rect::from_min_size(pos2(rect.left() + 46.0, rect.bottom() - 34.0), vec2(200.0, 26.0));
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
+                    let resp = child.add(egui::Button::new(RichText::new(label).font(semibold(12.5)).color(color)).frame(false));
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        action_taken = Some((i, action.clone()));
                     }
-                    let close = Rect::from_center_size(pos2(rect.right() - 20.0, rect.top() + 23.0), vec2(22.0, 22.0));
-                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(close));
-                    if icon_button(&mut child, ph::X, 22.0, "").clicked() {
-                        remove = Some(i);
-                    }
-                    if let Some((label, action)) = &t.action {
-                        let r = Rect::from_min_size(pos2(rect.left() + 46.0, rect.bottom() - 34.0), vec2(200.0, 26.0));
-                        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
-                        let resp = child.add(egui::Button::new(RichText::new(label).font(semibold(12.5)).color(color)).frame(false));
-                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                            action_taken = Some((i, action.clone()));
-                        }
-                    }
-                    // keep hovered toasts alive
-                });
+                }
+                // keep hovered toasts alive
+            });
         }
         if let Some((i, action)) = action_taken {
             match action {
@@ -780,26 +750,28 @@ impl LauncherApp {
                 true,
                 "Uninstall",
             ),
-            Confirm::ResetSettings => ("Reset all settings?".into(), "Nickname, modpack source and every pack's settings go back to defaults. Installed packs are kept.".into(), true, "Reset"),
+            Confirm::ResetSettings => (
+                "Reset all settings?".into(),
+                "Nickname, modpack source and every pack's settings go back to defaults. Installed packs are kept.".into(),
+                true,
+                "Reset",
+            ),
             Confirm::UninstallLauncher if install::UNINSTALL_ASKS_ABOUT_DATA => (
                 "Uninstall Akulav Launcher?".into(),
-                "The launcher closes and its uninstaller starts. It removes the launcher and its shortcuts, and asks whether to keep your modpacks and worlds.".into(),
+                "The launcher closes and its uninstaller starts. It removes the launcher and its shortcuts, and asks whether to keep your modpacks and worlds."
+                    .into(),
                 true,
                 "Uninstall",
             ),
-            Confirm::UninstallLauncher => (
-                "Uninstall Akulav Launcher?".into(),
-                "Removes the launcher and its shortcuts. The launcher closes afterwards.".into(),
-                true,
-                "Uninstall",
-            ),
+            Confirm::UninstallLauncher => {
+                ("Uninstall Akulav Launcher?".into(), "Removes the launcher and its shortcuts. The launcher closes afterwards.".into(), true, "Uninstall")
+            }
         };
         let uninstalling = matches!(confirm, Confirm::UninstallLauncher) && !install::UNINSTALL_ASKS_ABOUT_DATA;
         let delete_data = &mut self.uninstall_delete_data;
         let mut result: Option<bool> = None;
-        let modal = egui::Modal::new(Id::new("confirm")).frame(
-            Frame::new().fill(SURFACE).stroke(Stroke::new(1.0_f32, BORDER)).corner_radius(CornerRadius::same(R_LG)).inner_margin(Margin::same(24)),
-        );
+        let modal = egui::Modal::new(Id::new("confirm"))
+            .frame(Frame::new().fill(SURFACE).stroke(Stroke::new(1.0_f32, BORDER)).corner_radius(CornerRadius::same(R_LG)).inner_margin(Margin::same(24)));
         let resp = modal.show(ctx, |ui| {
             ui.set_width(400.0);
             ui.label(RichText::new(title).font(bold(18.0)));
@@ -918,9 +890,8 @@ impl LauncherApp {
         };
         let busy = self.job.is_some() || self.game.is_some();
         let mut close = false;
-        let modal = egui::Modal::new(Id::new("update_dialog")).frame(
-            Frame::new().fill(SURFACE).stroke(Stroke::new(1.0_f32, BORDER)).corner_radius(CornerRadius::same(R_LG)).inner_margin(Margin::same(26)),
-        );
+        let modal = egui::Modal::new(Id::new("update_dialog"))
+            .frame(Frame::new().fill(SURFACE).stroke(Stroke::new(1.0_f32, BORDER)).corner_radius(CornerRadius::same(R_LG)).inner_margin(Margin::same(26)));
         let resp = modal.show(ctx, |ui| {
             ui.set_width(430.0);
             ui.horizontal(|ui| {
@@ -956,10 +927,13 @@ impl LauncherApp {
                 }
                 UpdateState::Downloading { done, total, .. } => {
                     let frac = (*total > 0).then(|| *done as f32 / *total as f32);
-                    ui.label(RichText::new(match frac {
-                        Some(f) => format!("Downloading… {:.0}%  ·  {} / {}", f * 100.0, system::format_bytes(*done), system::format_bytes(*total)),
-                        None => format!("Downloading… {}", system::format_bytes(*done)),
-                    }).font(semibold(13.5)));
+                    ui.label(
+                        RichText::new(match frac {
+                            Some(f) => format!("Downloading… {:.0}%  ·  {} / {}", f * 100.0, system::format_bytes(*done), system::format_bytes(*total)),
+                            None => format!("Downloading… {}", system::format_bytes(*done)),
+                        })
+                        .font(semibold(13.5)),
+                    );
                     progress_bar(ui, frac, 6.0);
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
@@ -1131,36 +1105,6 @@ impl LauncherApp {
             Err(e) => self.install_error = Some(e),
         }
     }
-
-    fn resize_handles(&self, ctx: &egui::Context) {
-        use egui::viewport::ResizeDirection as D;
-        if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
-            return;
-        }
-        let r = ctx.screen_rect();
-        let t = 5.0;
-        let zones = [
-            (Rect::from_min_max(r.left_top(), pos2(r.right(), r.top() + t)), D::North, egui::CursorIcon::ResizeVertical),
-            (Rect::from_min_max(pos2(r.left(), r.bottom() - t), r.right_bottom()), D::South, egui::CursorIcon::ResizeVertical),
-            (Rect::from_min_max(r.left_top(), pos2(r.left() + t, r.bottom())), D::West, egui::CursorIcon::ResizeHorizontal),
-            (Rect::from_min_max(pos2(r.right() - t, r.top()), r.right_bottom()), D::East, egui::CursorIcon::ResizeHorizontal),
-            (Rect::from_min_size(r.left_top(), vec2(t * 2.0, t * 2.0)), D::NorthWest, egui::CursorIcon::ResizeNwSe),
-            (Rect::from_min_size(pos2(r.right() - t * 2.0, r.top()), vec2(t * 2.0, t * 2.0)), D::NorthEast, egui::CursorIcon::ResizeNeSw),
-            (Rect::from_min_size(pos2(r.left(), r.bottom() - t * 2.0), vec2(t * 2.0, t * 2.0)), D::SouthWest, egui::CursorIcon::ResizeNeSw),
-            (Rect::from_min_size(r.right_bottom() - vec2(t * 3.0, t * 3.0), vec2(t * 3.0, t * 3.0)), D::SouthEast, egui::CursorIcon::ResizeNwSe),
-        ];
-        egui::Area::new(Id::new("resize_handles")).order(egui::Order::Debug).fixed_pos(r.min).interactable(true).show(ctx, |ui| {
-            for (i, (rect, dir, cursor)) in zones.into_iter().enumerate().rev() {
-                let resp = ui.interact(rect, Id::new(("resize", i)), Sense::drag());
-                if resp.hovered() || resp.dragged() {
-                    ctx.set_cursor_icon(cursor);
-                }
-                if resp.drag_started() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
-                }
-            }
-        });
-    }
 }
 
 impl eframe::App for LauncherApp {
@@ -1170,14 +1114,10 @@ impl eframe::App for LauncherApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_events(ctx);
+        paint_backdrop(ctx);
         if self.install_offer != Offer::None {
-            egui::TopBottomPanel::top("title_bar")
-                .exact_height(42.0)
-                .frame(Frame::new().fill(SURFACE))
-                .show(ctx, |ui| self.title_bar(ui));
-            egui::CentralPanel::default().frame(Frame::new().fill(BG)).show(ctx, |ui| self.install_screen(ui));
+            egui::CentralPanel::default().frame(Frame::new()).show(ctx, |ui| self.install_screen(ui));
             self.toasts_ui(ctx);
-            self.resize_handles(ctx);
             return;
         }
         self.tick_skin_lookup(ctx);
@@ -1186,27 +1126,26 @@ impl eframe::App for LauncherApp {
             jobs::spawn_update_check(self.rt.handle(), self.reporter.clone());
         }
 
-        egui::TopBottomPanel::top("title_bar")
-            .exact_height(42.0)
-            .frame(Frame::new().fill(SURFACE))
-            .show(ctx, |ui| self.title_bar(ui));
-
-        egui::SidePanel::left("sidebar")
-            .exact_width(228.0)
-            .resizable(false)
-            .frame(Frame::new().fill(SURFACE).inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 0 }))
-            .show(ctx, |ui| {
-                let r = ui.max_rect();
-                ui.painter().vline(r.right() + 11.5, r.y_range(), Stroke::new(1.0_f32, BORDER));
-                self.sidebar(ui)
-            });
+        // A floating glass sidebar, like Hyve's.
+        egui::SidePanel::left("sidebar").exact_width(254.0).resizable(false).show_separator_line(false).frame(Frame::new()).show(ctx, |ui| {
+            let panel = Rect::from_min_max(ui.max_rect().min + vec2(GAP, GAP), ui.max_rect().max - vec2(0.0, GAP));
+            ui.painter().rect(panel, CornerRadius::same(R_LG), GLASS, Stroke::new(1.0_f32, GLASS_BORDER), StrokeKind::Inside);
+            ui.scope_builder(egui::UiBuilder::new().max_rect(panel.shrink(12.0)), |ui| self.sidebar(ui));
+        });
 
         if self.page == Page::Home {
             let open = self.drawer_open && self.selected_pack().is_some();
             egui::SidePanel::right("pack_drawer")
                 .exact_width(360.0)
                 .resizable(false)
-                .frame(Frame::new().fill(SURFACE).stroke(Stroke::new(1.0_f32, BORDER)).inner_margin(Margin::same(22)))
+                .frame(
+                    Frame::new()
+                        .fill(SURFACE)
+                        .stroke(Stroke::new(1.0_f32, GLASS_BORDER))
+                        .corner_radius(CornerRadius::same(R_LG))
+                        .inner_margin(Margin::same(22))
+                        .outer_margin(Margin { left: 0, right: GAP as i8, top: GAP as i8, bottom: GAP as i8 }),
+                )
                 .show_animated(ctx, open, |ui| self.pack_drawer(ui));
         }
 
@@ -1216,7 +1155,7 @@ impl eframe::App for LauncherApp {
         if fade < 1.0 {
             ctx.request_repaint();
         }
-        egui::CentralPanel::default().frame(Frame::new().fill(BG)).show(ctx, |ui| {
+        egui::CentralPanel::default().frame(Frame::new()).show(ctx, |ui| {
             ui.set_opacity(fade);
             match self.page {
                 Page::Home => self.home_page(ui),
@@ -1234,7 +1173,6 @@ impl eframe::App for LauncherApp {
 
         self.toasts_ui(ctx);
         self.confirm_ui(ctx);
-        self.resize_handles(ctx);
 
         if self.job.is_some() || self.game.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));
@@ -1258,29 +1196,18 @@ impl eframe::App for LauncherApp {
     }
 }
 
-fn window_button(ui: &mut egui::Ui, icon: &str, is_close: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(46.0, 42.0), Sense::click());
-    let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.08);
-    let bg = if is_close { Color32::from_rgb(196, 43, 28) } else { Color32::from_white_alpha(14) };
-    if hover > 0.0 {
-        ui.painter().rect_filled(rect, 0.0, with_alpha(bg, (bg.a() as f32 * hover) as u8));
-    }
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, icon, regular(15.0), lerp_color(MUTED, TEXT, hover));
-    resp
-}
-
 fn nav_item(ui: &mut egui::Ui, icon: &str, label: &str, active: bool, badge: Option<(String, Color32)>) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 42.0), Sense::click());
     let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.1);
     let act = ui.ctx().animate_bool_with_time(resp.id.with("a"), active, 0.15);
     let p = ui.painter();
-    let bg = lerp_color(with_alpha(Color32::WHITE, (hover * 8.0) as u8), with_alpha(ACCENT, 34), act);
-    p.rect_filled(rect, CornerRadius::same(R_MD), bg);
+    // Hyve's nav item: a faint hover, and for the current page an accent gradient with an accent border.
+    p.rect_filled(rect, CornerRadius::same(R_MD), with_alpha(Color32::WHITE, (hover * (1.0 - act) * 13.0) as u8));
     if act > 0.0 {
-        let bar = Rect::from_min_size(pos2(rect.left(), rect.center().y - 10.0 * act), vec2(3.0, 20.0 * act));
-        p.rect_filled(bar, CornerRadius::same(2), ACCENT_HI);
+        hgradient_rounded(p, rect, with_alpha(ACCENT, (72.0 * act) as u8), with_alpha(ACCENT, (20.0 * act) as u8), R_MD);
+        p.rect_stroke(rect, CornerRadius::same(R_MD), Stroke::new(1.0_f32, with_alpha(ACCENT, (90.0 * act) as u8)), StrokeKind::Inside);
     }
-    let fg = lerp_color(lerp_color(MUTED, TEXT, hover), TEXT, act);
+    let fg = lerp_color(lerp_color(lerp_color(MUTED, TEXT, 0.55), TEXT, hover), TEXT, act);
     p.text(rect.left_center() + vec2(18.0, 0.0), Align2::LEFT_CENTER, icon, regular(19.0), if active { ACCENT_HI } else { fg });
     p.text(rect.left_center() + vec2(48.0, 0.0), Align2::LEFT_CENTER, label, semibold(14.5), fg);
     if let Some((text, color)) = badge {

@@ -1,9 +1,7 @@
 //! Custom-drawn widgets: buttons, chips, toggles, avatars, pack tiles.
 
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
-use egui::{
-    pos2, vec2, Align2, Color32, CornerRadius, Frame, Margin, Rect, Response, Sense, Stroke, StrokeKind, Ui,
-};
+use egui::{pos2, vec2, Align2, Color32, CornerRadius, Margin, Rect, Response, Sense, Stroke, StrokeKind, Ui};
 
 use super::theme::*;
 
@@ -53,7 +51,6 @@ pub fn glow(painter: &egui::Painter, rect: Rect, radius: u8, color: Color32, str
     }
 }
 
-
 pub fn with_alpha(c: Color32, a: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
 }
@@ -72,13 +69,8 @@ pub fn paint_pack_icon(painter: &egui::Painter, rect: Rect, name: &str) {
     painter.rect_filled(rect, r, b);
     // diagonal-ish gradient: vertical gradient inset
     vgradient(painter, rect.shrink(1.0), with_alpha(a, 220), with_alpha(b, 0));
-    let initials: String = name
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .take(2)
-        .filter_map(|w| w.chars().next())
-        .collect::<String>()
-        .to_uppercase();
+    let initials: String =
+        name.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).take(2).filter_map(|w| w.chars().next()).collect::<String>().to_uppercase();
     painter.text(rect.center(), Align2::CENTER_CENTER, initials, black(rect.height() * 0.36), TEXT);
     painter.rect_stroke(rect, r, Stroke::new(1.0_f32, Color32::from_white_alpha(18)), StrokeKind::Inside);
 }
@@ -103,8 +95,9 @@ pub fn primary_button(ui: &mut Ui, text: &str, size: egui::Vec2, enabled: bool) 
     let p = ui.painter();
     let r = CornerRadius::same(R_MD);
     if enabled {
-        glow(p, rect, R_MD, ACCENT, 0.4 + 0.6 * hover);
+        glow(p, rect, R_MD, ACCENT, 0.3 + 0.5 * hover);
         vgradient_rounded(p, rect, lerp_color(ACCENT, ACCENT_HI, hover), lerp_color(ACCENT_LO, ACCENT, hover * 0.5), R_MD);
+        p.rect_stroke(rect, r, Stroke::new(1.0_f32, with_alpha(ACCENT_HI, 150)), StrokeKind::Inside);
     } else {
         p.rect_filled(rect, r, SURFACE_3);
     }
@@ -122,29 +115,51 @@ pub fn vgradient_rounded(p: &egui::Painter, rect: Rect, top: Color32, bottom: Co
         p.rect_filled(rect, CornerRadius::same(radius), lerp_color(top, bottom, 0.5));
         return;
     }
-    p.rect_filled(
-        Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + 2.0 * r)),
-        CornerRadius { nw: radius, ne: radius, sw: 0, se: 0 },
-        top,
-    );
-    p.rect_filled(
-        Rect::from_min_max(pos2(rect.min.x, rect.max.y - 2.0 * r), rect.max),
-        CornerRadius { nw: 0, ne: 0, sw: radius, se: radius },
-        bottom,
-    );
+    p.rect_filled(Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + 2.0 * r)), CornerRadius { nw: radius, ne: radius, sw: 0, se: 0 }, top);
+    p.rect_filled(Rect::from_min_max(pos2(rect.min.x, rect.max.y - 2.0 * r), rect.max), CornerRadius { nw: 0, ne: 0, sw: radius, se: radius }, bottom);
     vgradient(p, Rect::from_min_max(pos2(rect.min.x, rect.min.y + r), pos2(rect.max.x, rect.max.y - r)), top, bottom);
+}
+
+/// Rounded rect with a horizontal gradient. Each cap is clipped to its own strip so translucent colors don't
+/// overlap (no visible bands).
+pub fn hgradient_rounded(p: &egui::Painter, rect: Rect, left: Color32, right: Color32, radius: u8) {
+    let r = radius as f32;
+    if rect.width() <= 2.0 * r {
+        p.rect_filled(rect, CornerRadius::same(radius), lerp_color(left, right, 0.5));
+        return;
+    }
+    let left_strip = Rect::from_min_max(rect.min, pos2(rect.min.x + r, rect.max.y));
+    let right_strip = Rect::from_min_max(pos2(rect.max.x - r, rect.min.y), rect.max);
+    p.with_clip_rect(left_strip.intersect(p.clip_rect())).rect_filled(
+        Rect::from_min_max(rect.min, pos2(rect.min.x + 2.0 * r, rect.max.y)),
+        CornerRadius { nw: radius, sw: radius, ne: 0, se: 0 },
+        left,
+    );
+    p.with_clip_rect(right_strip.intersect(p.clip_rect())).rect_filled(
+        Rect::from_min_max(pos2(rect.max.x - 2.0 * r, rect.min.y), rect.max),
+        CornerRadius { nw: 0, sw: 0, ne: radius, se: radius },
+        right,
+    );
+    hgradient(p, Rect::from_min_max(pos2(rect.min.x + r, rect.min.y), pos2(rect.max.x - r, rect.max.y)), left, right);
 }
 
 /// Secondary button: subtle surface, optional icon.
 pub fn ghost_button(ui: &mut Ui, icon: &str, text: &str) -> Response {
-    let label = if icon.is_empty() { text.to_string() } else if text.is_empty() { icon.to_string() } else { format!("{icon}  {text}") };
+    let label = if icon.is_empty() {
+        text.to_string()
+    } else if text.is_empty() {
+        icon.to_string()
+    } else {
+        format!("{icon}  {text}")
+    };
     let galley = ui.painter().layout_no_wrap(label, semibold(13.0), TEXT);
     let size = vec2(galley.size().x + 26.0, 34.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.1);
     let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same(R_SM), lerp_color(SURFACE_2, SURFACE_3, hover));
-    p.rect_stroke(rect, CornerRadius::same(R_SM), Stroke::new(1.0_f32, lerp_color(BORDER, Color32::from_rgb(70, 76, 90), hover)), StrokeKind::Inside);
+    // Hyve's .btn: translucent white, a bit brighter on hover.
+    p.rect_filled(rect, CornerRadius::same(R_MD), with_alpha(Color32::WHITE, (15.0 + 14.0 * hover) as u8));
+    p.rect_stroke(rect, CornerRadius::same(R_MD), Stroke::new(1.0_f32, with_alpha(Color32::WHITE, (38.0 + 22.0 * hover) as u8)), StrokeKind::Inside);
     p.galley(rect.center() - galley.size() / 2.0, galley, TEXT);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -157,8 +172,8 @@ pub fn danger_button(ui: &mut Ui, icon: &str, text: &str) -> Response {
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.1);
     let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same(R_SM), with_alpha(ACCENT, (20.0 + 30.0 * hover) as u8));
-    p.rect_stroke(rect, CornerRadius::same(R_SM), Stroke::new(1.0_f32, with_alpha(ACCENT, 110)), StrokeKind::Inside);
+    p.rect_filled(rect, CornerRadius::same(R_MD), with_alpha(ACCENT, (20.0 + 30.0 * hover) as u8));
+    p.rect_stroke(rect, CornerRadius::same(R_MD), Stroke::new(1.0_f32, with_alpha(ACCENT, 110)), StrokeKind::Inside);
     p.galley(rect.center() - galley.size() / 2.0, galley, ACCENT_HI);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -190,7 +205,8 @@ pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     }
     let t = ui.ctx().animate_bool_with_time(resp.id, *on, 0.15);
     let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same(255), lerp_color(SURFACE_3, ACCENT, t));
+    p.rect_filled(rect, CornerRadius::same(255), lerp_color(with_alpha(Color32::WHITE, 34), ACCENT, t));
+    p.rect_stroke(rect, CornerRadius::same(255), Stroke::new(1.0_f32, with_alpha(Color32::WHITE, (46.0 * (1.0 - t)) as u8)), StrokeKind::Inside);
     let x = egui::lerp(rect.left() + 11.0..=rect.right() - 11.0, t);
     p.circle_filled(pos2(x, rect.center().y), 8.0, Color32::WHITE);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -212,10 +228,7 @@ pub fn setting_row(ui: &mut Ui, title: &str, desc: &str, control: impl FnOnce(&m
 
 /// Card container for settings sections.
 pub fn card<R>(ui: &mut Ui, title: &str, icon: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
-    Frame::new()
-        .fill(glass())
-        .stroke(Stroke::new(1.0_f32, BORDER))
-        .corner_radius(CornerRadius::same(R_LG))
+    glass_frame()
         .inner_margin(Margin::same(20))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -265,4 +278,3 @@ pub fn progress_bar(ui: &mut Ui, fraction: Option<f32>, height: f32) {
 pub fn label_kicker(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text.to_uppercase()).font(bold(11.0)).color(ACCENT_HI).extra_letter_spacing(1.6));
 }
-

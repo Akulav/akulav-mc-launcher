@@ -32,7 +32,7 @@ fn main() -> eframe::Result<()> {
         .with_app_id("akulav-launcher")
         .with_inner_size([1180.0, 720.0])
         .with_min_inner_size([960.0, 600.0])
-        .with_decorations(false)
+        .with_decorations(true)
         .with_resizable(true);
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);

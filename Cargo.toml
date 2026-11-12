@@ -1,6 +1,6 @@
 [package]
 name = "akulav-launcher"
-version = "11.0.1"
+version = "11.1.0"
 edition = "2021"
 authors = ["Akulav"]
 description = "Akulav Launcher - a lightweight Minecraft modpack launcher, made by Akulav"

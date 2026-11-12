@@ -1,33 +1,73 @@
-//! Colors, fonts and the global egui style. The palette is built around the launcher's
-//! redstone-ore wallpaper: charcoal surfaces with a redstone-red accent.
+//! Colors, fonts and the global egui style. The look follows Akulav's newer apps (Hyve, Lumen): a deep blue-black
+//! backdrop with soft glows and glass panels with hairline borders, with the launcher's redstone-red accent.
 
 use std::sync::Arc;
 
-use egui::{Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Shadow, Stroke, Visuals};
+use egui::epaint::{Mesh, Vertex, WHITE_UV};
+use egui::{Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Frame, Margin, Pos2, Rect, Shadow, Stroke, Visuals};
 
-pub const BG: Color32 = Color32::from_rgb(11, 12, 15);
-pub const SURFACE: Color32 = Color32::from_rgb(18, 20, 25);
-pub const SURFACE_2: Color32 = Color32::from_rgb(26, 29, 36);
-pub const SURFACE_3: Color32 = Color32::from_rgb(36, 40, 49);
-pub const BORDER: Color32 = Color32::from_rgb(40, 44, 54);
-pub const TEXT: Color32 = Color32::from_rgb(236, 238, 242);
-pub const MUTED: Color32 = Color32::from_rgb(138, 145, 160);
-pub const FAINT: Color32 = Color32::from_rgb(92, 98, 112);
+pub const BG: Color32 = Color32::from_rgb(9, 11, 20);
+pub const SURFACE: Color32 = Color32::from_rgb(16, 19, 32);
+pub const SURFACE_2: Color32 = Color32::from_rgb(22, 25, 40);
+pub const SURFACE_3: Color32 = Color32::from_rgb(30, 34, 52);
+pub const BORDER: Color32 = Color32::from_rgb(36, 40, 58);
+pub const BORDER_HI: Color32 = Color32::from_rgb(58, 63, 88);
+/// Glass: translucent white over the backdrop, so the glows show through panels and cards.
+pub const GLASS: Color32 = Color32::from_rgba_premultiplied(14, 14, 15, 14);
+pub const GLASS_BORDER: Color32 = Color32::from_rgba_premultiplied(24, 24, 26, 24);
+pub const TEXT: Color32 = Color32::from_rgb(232, 234, 246);
+pub const MUTED: Color32 = Color32::from_rgb(143, 149, 178);
+pub const FAINT: Color32 = Color32::from_rgb(93, 99, 128);
 pub const ACCENT: Color32 = Color32::from_rgb(229, 56, 59);
 pub const ACCENT_HI: Color32 = Color32::from_rgb(255, 92, 95);
 pub const ACCENT_LO: Color32 = Color32::from_rgb(150, 30, 34);
-pub const GOLD: Color32 = Color32::from_rgb(244, 183, 64);
-pub const GREEN: Color32 = Color32::from_rgb(61, 214, 140);
-pub const BLUE: Color32 = Color32::from_rgb(96, 165, 250);
+pub const GOLD: Color32 = Color32::from_rgb(251, 191, 36);
+pub const GREEN: Color32 = Color32::from_rgb(52, 211, 153);
+pub const BLUE: Color32 = Color32::from_rgb(34, 211, 238);
 
 /// Translucent panel color used on top of the wallpaper.
 pub fn glass() -> Color32 {
-    Color32::from_rgba_unmultiplied(16, 18, 23, 214)
+    Color32::from_rgba_unmultiplied(14, 17, 29, 214)
 }
 
-pub const R_SM: u8 = 6;
+pub const R_SM: u8 = 8;
 pub const R_MD: u8 = 10;
-pub const R_LG: u8 = 14;
+pub const R_LG: u8 = 16;
+/// Gap between the window edge, the sidebar and the content.
+pub const GAP: f32 = 14.0;
+
+/// A glass panel: translucent fill, hairline border, large radius.
+pub fn glass_frame() -> Frame {
+    Frame::new().fill(GLASS).stroke(Stroke::new(1.0_f32, GLASS_BORDER)).corner_radius(CornerRadius::same(R_LG))
+}
+
+/// Soft radial glow: `color` in the middle, fading to nothing at `radius`.
+fn radial(mesh: &mut Mesh, center: Pos2, radius: egui::Vec2, color: Color32) {
+    let base = mesh.vertices.len() as u32;
+    mesh.vertices.push(Vertex { pos: center, uv: WHITE_UV, color });
+    let n = 48;
+    for i in 0..=n {
+        let a = i as f32 / n as f32 * std::f32::consts::TAU;
+        let pos = center + egui::vec2(a.cos() * radius.x, a.sin() * radius.y);
+        mesh.vertices.push(Vertex { pos, uv: WHITE_UV, color: Color32::TRANSPARENT });
+    }
+    for i in 0..n {
+        mesh.add_triangle(base, base + 1 + i, base + 2 + i);
+    }
+}
+
+/// The window backdrop: the base color with a red glow top-left, a cyan glow top-right and a faint one below.
+pub fn paint_backdrop(ctx: &egui::Context) {
+    let r: Rect = ctx.screen_rect();
+    let p = ctx.layer_painter(egui::LayerId::background());
+    p.rect_filled(r, CornerRadius::ZERO, BG);
+    let (w, h) = (r.width(), r.height());
+    let mut mesh = Mesh::default();
+    radial(&mut mesh, r.min + egui::vec2(w * 0.08, -h * 0.10), egui::vec2(w * 0.62, h * 0.85), ACCENT.gamma_multiply(0.13));
+    radial(&mut mesh, r.min + egui::vec2(w * 1.05, h * 0.10), egui::vec2(w * 0.48, h * 0.75), BLUE.gamma_multiply(0.12));
+    radial(&mut mesh, r.min + egui::vec2(w * 0.5, h * 1.2), egui::vec2(w * 0.45, h * 0.6), ACCENT_LO.gamma_multiply(0.08));
+    p.add(mesh);
+}
 
 pub fn semibold(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("semibold".into()))
@@ -82,7 +122,7 @@ pub fn apply_style(ctx: &egui::Context) {
         v.override_text_color = None;
         v.panel_fill = BG;
         v.window_fill = SURFACE;
-        v.extreme_bg_color = Color32::from_rgb(9, 10, 13);
+        v.extreme_bg_color = Color32::from_rgb(7, 8, 15); // text fields: darker than the glass around them
         v.faint_bg_color = SURFACE_2;
         v.code_bg_color = SURFACE_2;
         v.window_stroke = Stroke::new(1.0_f32, BORDER);
@@ -91,12 +131,12 @@ pub fn apply_style(ctx: &egui::Context) {
         v.window_shadow = Shadow { offset: [0, 12], blur: 32, spread: 0, color: Color32::from_black_alpha(140) };
         v.popup_shadow = Shadow { offset: [0, 8], blur: 20, spread: 0, color: Color32::from_black_alpha(120) };
         v.selection.bg_fill = ACCENT.linear_multiply(0.45);
-        v.selection.stroke = Stroke::new(1.0_f32, TEXT);
+        v.selection.stroke = Stroke::new(1.0_f32, ACCENT); // also the focused text field border
         v.hyperlink_color = ACCENT_HI;
         v.text_cursor.stroke = Stroke::new(2.0_f32, ACCENT_HI);
         v.slider_trailing_fill = true;
 
-        let r = CornerRadius::same(R_SM);
+        let r = CornerRadius::same(R_MD);
         let w = &mut v.widgets;
         w.noninteractive.bg_fill = SURFACE_2;
         w.noninteractive.weak_bg_fill = SURFACE_2;
@@ -104,9 +144,9 @@ pub fn apply_style(ctx: &egui::Context) {
         w.noninteractive.fg_stroke = Stroke::new(1.0_f32, TEXT);
         w.noninteractive.corner_radius = r;
 
-        w.inactive.bg_fill = SURFACE_3;
+        w.inactive.bg_fill = SURFACE_2;
         w.inactive.weak_bg_fill = SURFACE_2;
-        w.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
+        w.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER_HI);
         w.inactive.fg_stroke = Stroke::new(1.0_f32, TEXT);
         w.inactive.corner_radius = r;
 
@@ -136,13 +176,6 @@ pub fn apply_style(ctx: &egui::Context) {
         style.spacing.scroll.floating = true;
 
         use egui::TextStyle::*;
-        style.text_styles = [
-            (Small, regular(11.5)),
-            (Body, regular(14.0)),
-            (Button, semibold(13.5)),
-            (Heading, bold(22.0)),
-            (Monospace, mono(12.5)),
-        ]
-        .into();
+        style.text_styles = [(Small, regular(11.5)), (Body, regular(14.0)), (Button, semibold(13.5)), (Heading, bold(22.0)), (Monospace, mono(12.5))].into();
     });
 }
