@@ -4,6 +4,11 @@ All notable changes to Akulav Launcher are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Older versions are described on the
 [releases page](https://github.com/Akulav/akulav-mc-launcher/releases).
 
+## [11.1.1] - 2026-11-20
+
+### Changed
+- Docs: a new `docs/ARCHITECTURE.md` (how the launcher prepares and starts a pack), linked from the README.
+
 ## [11.1.0] - 2026-11-12
 
 ### Changed
