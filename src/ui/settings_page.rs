@@ -57,14 +57,14 @@ impl LauncherApp {
                                 .font(semibold(15.0))
                                 .char_limit(16)
                                 .desired_width(260.0)
-                                .text_color(if valid { TEXT } else { ACCENT_HI }),
+                                .text_color(if valid { TEXT } else { RED }),
                         );
                         if r.changed() {
                             self.name_changed();
                         }
                         ui.add_space(2.0);
                         let (icon, text, color) = match (validate_username(&self.settings.username), self.skin_status(), source) {
-                            (Err(e), _, _) => (ph::WARNING, e.to_string(), ACCENT_HI),
+                            (Err(e), _, _) => (ph::WARNING, e.to_string(), RED),
                             (_, _, Some(src)) => (ph::CHECK_CIRCLE, format!("Skin found on {}", src.label()), GREEN),
                             (_, Some(crate::ui::app::SkinEntry::Loading), _) | (_, None, _) => (ph::CIRCLE_NOTCH, "Looking up skin…".into(), MUTED),
                             _ => (ph::USER_CIRCLE, "No skin for this name yet — showing a generated head".into(), MUTED),

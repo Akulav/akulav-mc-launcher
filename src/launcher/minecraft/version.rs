@@ -439,9 +439,6 @@ impl Library {
 #[derive(Debug, Clone)]
 pub struct ResolvedVersion {
     pub json: VersionJson,
-    /// Version chain from the requested id down to the base game version.
-    #[allow(dead_code)]
-    pub chain: Vec<String>,
     /// Id of the vanilla version that provides the client jar.
     pub jar_source: String,
 }

@@ -49,9 +49,6 @@ impl SkinSource {
 pub struct Skin {
     pub rgba: Vec<u8>,
     pub source: SkinSource,
-    /// Alex-style (3px arms) model; kept for a future full-body preview.
-    #[allow(dead_code)]
-    pub slim: bool,
 }
 
 #[derive(Deserialize)]
@@ -84,8 +81,6 @@ struct Textures {
 #[derive(Deserialize)]
 struct TextureRef {
     url: String,
-    #[serde(default)]
-    metadata: Option<serde_json::Value>,
 }
 
 fn cache_paths(paths: &Paths, name: &str) -> (PathBuf, PathBuf) {
@@ -104,7 +99,7 @@ fn fresh(path: &Path, ttl: Duration) -> bool {
 /// Look up a skin for `name`. `Ok(None)` means the name has no skin anywhere.
 pub async fn lookup(client: &reqwest::Client, paths: &Paths, name: &str) -> Result<Option<Skin>> {
     let (png_path, meta_path) = cache_paths(paths, name);
-    // meta file: "<source>[ slim]" or "none"
+    // meta file: "<source>" or "none"
     if let Ok(meta) = std::fs::read_to_string(&meta_path) {
         let meta = meta.trim();
         if meta == "none" && fresh(&meta_path, MISSING_TTL) {
@@ -114,7 +109,7 @@ pub async fn lookup(client: &reqwest::Client, paths: &Paths, name: &str) -> Resu
             if fresh(&meta_path, CACHE_TTL) {
                 if let Ok(bytes) = std::fs::read(&png_path) {
                     if let Ok(rgba) = normalize_skin(&bytes) {
-                        return Ok(Some(Skin { rgba, source, slim: meta.contains("slim") }));
+                        return Ok(Some(Skin { rgba, source }));
                     }
                 }
             }
@@ -136,21 +131,21 @@ pub async fn lookup(client: &reqwest::Client, paths: &Paths, name: &str) -> Resu
 
     let _ = std::fs::create_dir_all(png_path.parent().unwrap());
     match &found {
-        Some((bytes, source, slim)) => {
+        Some((bytes, source)) => {
             let _ = std::fs::write(&png_path, bytes);
-            let _ = std::fs::write(&meta_path, format!("{}{}", source.tag(), if *slim { " slim" } else { "" }));
+            let _ = std::fs::write(&meta_path, source.tag());
         }
         None => {
             let _ = std::fs::write(&meta_path, "none");
         }
     }
     match found {
-        Some((bytes, source, slim)) => Ok(Some(Skin { rgba: normalize_skin(&bytes)?, source, slim })),
+        Some((bytes, source)) => Ok(Some(Skin { rgba: normalize_skin(&bytes)?, source })),
         None => Ok(None),
     }
 }
 
-async fn from_mojang(client: &reqwest::Client, name: &str) -> Result<Option<(Vec<u8>, SkinSource, bool)>> {
+async fn from_mojang(client: &reqwest::Client, name: &str) -> Result<Option<(Vec<u8>, SkinSource)>> {
     let resp = client
         .get(format!("https://api.mojang.com/users/profiles/minecraft/{name}"))
         .timeout(Duration::from_secs(8))
@@ -173,19 +168,13 @@ async fn from_mojang(client: &reqwest::Client, name: &str) -> Result<Option<(Vec
     let decoded = base64::engine::general_purpose::STANDARD.decode(prop.value.as_bytes()).context("bad textures payload")?;
     let payload: TexturesPayload = serde_json::from_slice(&decoded)?;
     let Some(skin) = payload.textures.skin else { return Ok(None) };
-    let slim = skin
-        .metadata
-        .as_ref()
-        .and_then(|m| m.get("model"))
-        .and_then(|m| m.as_str())
-        .is_some_and(|m| m == "slim");
     // textures.minecraft.net serves http URLs; https works too.
     let url = skin.url.replacen("http://", "https://", 1);
     let bytes = client.get(url).timeout(Duration::from_secs(10)).send().await?.error_for_status()?.bytes().await?;
-    Ok(Some((bytes.to_vec(), SkinSource::Mojang, slim)))
+    Ok(Some((bytes.to_vec(), SkinSource::Mojang)))
 }
 
-async fn from_elyby(client: &reqwest::Client, name: &str) -> Result<Option<(Vec<u8>, SkinSource, bool)>> {
+async fn from_elyby(client: &reqwest::Client, name: &str) -> Result<Option<(Vec<u8>, SkinSource)>> {
     let resp = client
         .get(format!("https://skinsystem.ely.by/skins/{name}.png"))
         .timeout(Duration::from_secs(8))
@@ -203,7 +192,7 @@ async fn from_elyby(client: &reqwest::Client, name: &str) -> Result<Option<(Vec<
     if bytes.len() < 8 || &bytes[1..4] != b"PNG" {
         return Ok(None);
     }
-    Ok(Some((bytes.to_vec(), SkinSource::ElyBy, false)))
+    Ok(Some((bytes.to_vec(), SkinSource::ElyBy)))
 }
 
 /// Decode a skin PNG to 64×64 RGBA. Legacy 64×32 skins are padded (bottom half transparent);

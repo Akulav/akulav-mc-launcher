@@ -334,31 +334,6 @@ impl LauncherApp {
             PackStatus::NotInstalled => format!("{}  INSTALL", ph::DOWNLOAD_SIMPLE),
         };
         let resp = primary_button(ui, &label, rect.size(), true);
-        // Breathing glow and a periodic light sweep across the button.
-        if self.settings.animated_background {
-            let t = ui.input(|i| i.time) as f32;
-            let p = ui.painter();
-            let breath = 0.5 + 0.5 * (t * 2.2).sin();
-            glow(p, rect, R_MD, ACCENT, 0.35 * breath);
-            let cycle = (t % 4.0) / 1.1; // sweep for ~1s every 4s
-            if cycle < 1.0 {
-                let x = rect.left() - 60.0 + cycle * (rect.width() + 120.0);
-                let clip = p.with_clip_rect(rect.shrink(1.0));
-                let mut mesh = egui::epaint::Mesh::default();
-                let c0 = Color32::TRANSPARENT;
-                let c1 = Color32::from_white_alpha(70);
-                for (dx, c) in [(0.0, c0), (22.0, c1), (44.0, c0)] {
-                    mesh.vertices.push(egui::epaint::Vertex { pos: pos2(x + dx + 18.0, rect.top()), uv: egui::epaint::WHITE_UV, color: c });
-                    mesh.vertices.push(egui::epaint::Vertex { pos: pos2(x + dx, rect.bottom()), uv: egui::epaint::WHITE_UV, color: c });
-                }
-                for k in 0..2u32 {
-                    let b = k * 2;
-                    mesh.add_triangle(b, b + 1, b + 2);
-                    mesh.add_triangle(b + 1, b + 3, b + 2);
-                }
-                clip.add(mesh);
-            }
-        }
         if resp.clicked() {
             self.click();
             self.start_job(&ctx, JobKind::Launch);

@@ -35,7 +35,6 @@ impl LogLine {
     pub fn new(source: LogSource, level: LogLevel, text: impl Into<String>) -> Self {
         Self { time: chrono::Local::now(), source, level, text: text.into() }
     }
-
 }
 
 /// Turns raw process output into log lines. Keeps per-stream state so indented continuation

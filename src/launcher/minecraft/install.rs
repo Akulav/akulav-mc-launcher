@@ -25,9 +25,6 @@ pub struct Manifest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ManifestEntry {
     pub id: String,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    pub kind: String,
     pub url: String,
     #[serde(default)]
     pub sha1: Option<String>,
@@ -118,7 +115,7 @@ impl<'a> GameInstaller<'a> {
             current = merge(current, parent);
         }
         let jar_source = current.jar.clone().or(jar_source).unwrap_or_else(|| id.to_string());
-        Ok(ResolvedVersion { json: current, chain, jar_source })
+        Ok(ResolvedVersion { json: current, jar_source })
     }
 
     pub fn library_files(rv: &ResolvedVersion, env: &Env) -> Vec<LibraryFile> {

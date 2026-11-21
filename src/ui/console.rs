@@ -14,7 +14,7 @@ fn level_color(l: LogLevel) -> Color32 {
         LogLevel::Debug => FAINT,
         LogLevel::Info => Color32::from_rgb(206, 210, 218),
         LogLevel::Warn => GOLD,
-        LogLevel::Error => ACCENT_HI,
+        LogLevel::Error => RED,
     }
 }
 
@@ -72,7 +72,7 @@ impl LauncherApp {
                         chip(ui, ph::WARNING, &format!("{warns}"), GOLD);
                     }
                     if errors > 0 {
-                        chip(ui, ph::WARNING_CIRCLE, &format!("{errors}"), ACCENT_HI);
+                        chip(ui, ph::WARNING_CIRCLE, &format!("{errors}"), RED);
                     }
                 });
             });
@@ -126,13 +126,13 @@ impl LauncherApp {
 
         if let Some(crash) = self.last_crash.clone() {
             Frame::new()
-                .fill(with_alpha(ACCENT, 26))
-                .stroke(Stroke::new(1.0_f32, with_alpha(ACCENT, 110)))
+                .fill(with_alpha(RED, 22))
+                .stroke(Stroke::new(1.0_f32, with_alpha(RED, 90)))
                 .corner_radius(CornerRadius::same(R_MD))
                 .inner_margin(Margin::symmetric(14, 10))
                 .show(&mut ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(ph::BUG).font(regular(18.0)).color(ACCENT_HI));
+                        ui.label(RichText::new(ph::BUG).font(regular(18.0)).color(RED));
                         ui.label(RichText::new("The game crashed.").font(semibold(14.0)));
                         ui.label(RichText::new(crash.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).color(MUTED));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

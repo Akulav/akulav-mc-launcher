@@ -2,24 +2,16 @@
 //! uninstalls. The launcher only finds the folder Inno remembered, runs the setup in update mode,
 //! and starts the Inno uninstaller.
 
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
-use super::{installed_root, Offer, Startup, StartupInfo};
+use super::{installed_root, Offer};
 use crate::launcher::update::{ASSET_WINDOWS, CURRENT_VERSION};
 
 /// Inno Setup `AppId` from the .iss file; Inno keeps the chosen folder in this uninstall key.
 pub const INNO_UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{7FBF629D-D100-4E71-AE93-4977A99B250F}_is1";
-/// Launchers before 11.0 installed themselves and registered this key.
-const LEGACY_UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\AkulavLauncher";
-/// The 9.x C# launcher lived here.
-const LEGACY_DIR: &str = r"C:\AkulavLauncher";
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const DETACHED_PROCESS: u32 = 0x0000_0008;
 
 /// Install folder remembered by the setup.
 pub fn remembered_root() -> Option<PathBuf> {
@@ -27,10 +19,6 @@ pub fn remembered_root() -> Option<PathBuf> {
     let dir: String = key.get_value("InstallLocation").ok()?;
     let dir = dir.trim().trim_end_matches('\\');
     (!dir.is_empty()).then(|| PathBuf::from(dir))
-}
-
-pub fn before_run(_exe: &Path, _info: &StartupInfo) -> Option<Startup> {
-    None
 }
 
 /// The setup does the installing on Windows.
@@ -42,17 +30,6 @@ pub fn on_installed_start(root: &Path) {
     if super::installed_version(root).as_deref() != Some(CURRENT_VERSION) {
         let _ = super::write_marker(root);
     }
-    let _ = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER).delete_subkey_all(LEGACY_UNINSTALL_KEY);
-    let legacy = Path::new(LEGACY_DIR);
-    if legacy.join("AkulavLauncher.exe").is_file() || legacy.join("update.exe").is_file() {
-        delete_later(legacy);
-    }
-}
-
-/// Delete a folder a few seconds from now, after any process running from it has exited.
-fn delete_later(dir: &Path) {
-    let script = format!("ping 127.0.0.1 -n 4 > nul & rmdir /S /Q \"{}\"", dir.display());
-    let _ = Command::new("cmd").args(["/C", &script]).creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS).spawn();
 }
 
 pub fn install_and_launch(_root: &Path, _args: &[&str]) -> Result<()> {

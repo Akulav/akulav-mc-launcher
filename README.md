@@ -121,9 +121,9 @@ It asks for an install folder (default `~/Applications/Akulav Launcher`) and cre
 **In the install folder you chose**, next to the program. Install on `D:\Games\AkulavLauncher` and every modpack, world,
 Java runtime and download goes to `D:\Games\AkulavLauncher` too; nothing goes to `%APPDATA%`, `~/.local/share` or other
 system folders. The folder is remembered (Windows: by the setup; Linux/macOS: in `~/.config/akulav-launcher/install-dir`
-or `~/Library/Application Support/akulav-launcher/install-dir`), so updates keep everything in place. Data from
-launchers before 11.0 (`%APPDATA%\AkulavLauncher`) is moved in on the first start, also when the install folder is on
-another drive.
+or `~/Library/Application Support/akulav-launcher/install-dir`), so updates keep everything in place. Coming from
+a launcher before 11.0? Install 11.1.1 first: it moves your old data from `%APPDATA%\AkulavLauncher` into the install
+folder.
 
 | Path | Contents |
 | :-- | :-- |
@@ -160,7 +160,6 @@ AkulavLauncher.exe --cli launch "GoldenEra - Ultimate" [--user NAME] [--ram 6144
 
 - Modpack list: `https://akulav.com/shared/aa7e873115b2344cc291045b` (can be overridden in Settings)
 - Launcher updates (11.0+): the latest GitHub release of this repository, verified against its `SHA256SUMS.txt`
-- Launcher version for launchers before 11.0: `https://akulav.com/shared/5ce6926c3dda5f322df1ac59`
 
 `modpacks.json` entries can optionally include a `"Description"` shown on the pack page:
 
@@ -187,10 +186,9 @@ Releases are fully automated by [`.github/workflows/build.yml`](.github/workflow
 2. Push to `main`.
 3. If no release with that version exists, CI tests and builds all three systems, tags the commit and publishes a GitHub
    release with exactly three programs, `AkulavLauncher-setup.exe`, `AkulavLauncher-linux-x64` and
-   `AkulavLauncher-macos-arm64`, plus `SHA256SUMS.txt` and `version.txt`.
-4. Launchers 11.0+ find the release on GitHub by themselves (checked at start and every 2 hours, or with
-   *Check for updates*). Only while launchers older than 11.0 are still around: upload that `version.txt` to the
-   old launcher-version URL above.
+   `AkulavLauncher-macos-arm64`, plus `SHA256SUMS.txt`.
+4. Installed launchers find the release on GitHub by themselves (checked at start and every 2 hours, or with
+   *Check for updates*).
 
 ### How updates are applied
 
@@ -200,24 +198,6 @@ this system's file and checks it against `SHA256SUMS.txt`; *Restart & update* th
 - **Windows:** runs `AkulavLauncher-setup.exe /VERYSILENT /UPDATE` with the current install folder. The setup closes the
   launcher, installs into the same folder and starts the new version.
 - **Linux / macOS:** swaps the binary in the install folder in place (re-signing the app on macOS) and restarts.
-
-### Upgrading from launchers before 11.0
-
-`version.txt` points old launchers at the new files:
-
-```
-11.0.0
-https://github.com/Akulav/akulav-mc-launcher/releases/download/11.0.0/AkulavLauncher-setup.exe
-<SHA-256 of the setup>
-linux https://github.com/Akulav/akulav-mc-launcher/releases/download/11.0.0/AkulavLauncher-linux-x64 <SHA-256>
-```
-
-- **10.x on Windows** swaps the setup in as its own `AkulavLauncher.exe` and starts it. The setup notices, restarts
-  from the temp folder and shows the normal wizard, so the user picks the install folder once. Old data in
-  `%APPDATA%\AkulavLauncher` is moved into it, and the old *Apps* entry and `C:\AkulavLauncher` (9.x) are removed.
-- **10.x on Linux** swaps in the new binary in `~/.local/share/AkulavLauncher/bin/`; it moves itself up into
-  `~/.local/share/AkulavLauncher` (where the data already is) and carries on.
-- **9.x** downloads line 2 as its installer and runs it.
 
 ### Building from source
 
@@ -245,7 +225,7 @@ Debug builds never offer to install themselves (pass `--here` to a release build
 
 ## 🙏 Credits
 
-Icons by [Phosphor Icons](https://phosphoricons.com) (MIT). Inter font by Rasmus Andersson (SIL OFL 1.1, see `assets/fonts`).
+Icons by [Phosphor Icons](https://phosphoricons.com) (MIT). Segoe UI on Windows (the system's font); elsewhere Inter by Rasmus Andersson (SIL OFL 1.1, see `assets/fonts`).
 DejaVu Sans Mono (Bitstream Vera license). Launcher icon by [Smashicons](https://www.flaticon.com/authors/smashicons).
 
 ---

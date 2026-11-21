@@ -66,11 +66,6 @@ english.DataNote=The launcher and everything it downloads (modpacks, worlds, Jav
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
-[InstallDelete]
-; Leftovers of the self-updating 10.x launcher.
-Type: files; Name: "{app}\AkulavLauncher.old.exe"
-Type: files; Name: "{app}\AkulavLauncher.new.exe"
-
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "{#AppExe}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
@@ -87,17 +82,10 @@ Filename: "{app}\{#AppExe}"; Parameters: "--updated-from ""{param:FROM|}"""; Wor
 
 [UninstallDelete]
 Type: files; Name: "{app}\{#Marker}"
-Type: files; Name: "{app}\AkulavLauncher.old.exe"
-Type: files; Name: "{app}\AkulavLauncher.new.exe"
 ; The downloaded update setup (in-app updates keep it in the launcher's own folder).
 Type: filesandordirs; Name: "{app}\cache\update"
-; Window size and position remembered by the UI toolkit before 11.0.1 (now window.ron in {app}).
-Type: filesandordirs; Name: "{userappdata}\akulav-launcher"
 
 [Code]
-const
-  LegacyUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\AkulavLauncher';
-
 function IsUpdate(): Boolean;
 var
   I: Integer;
@@ -106,29 +94,6 @@ begin
   for I := 1 to ParamCount do
     if CompareText(ParamStr(I), '/UPDATE') = 0 then
       Result := True;
-end;
-
-{ A 10.x launcher updates by renaming the downloaded file to AkulavLauncher.exe inside its own
-  folder and starting it. Installing there would have to overwrite this very file, and Setup
-  can't copy its own file while it runs, so let cmd wait until we've exited, copy it to the temp
-  folder and start it from there. The restarted setup shows the normal wizard. }
-function InitializeSetup(): Boolean;
-var
-  Src, TempSetup: String;
-  Code: Integer;
-begin
-  Result := True;
-  Src := ExpandConstant('{srcexe}');
-  if CompareText(ExtractFileName(Src), '{#AppExe}') = 0 then
-  begin
-    Result := False;
-    TempSetup := AddBackslash(GetTempDir) + '{#SetupName}.exe';
-    Log('Restarting the setup from ' + TempSetup);
-    if not Exec(ExpandConstant('{cmd}'),
-      '/s /c "ping -n 3 127.0.0.1 >nul & copy /y "' + Src + '" "' + TempSetup + '" >nul & start "" "' + TempSetup + '""',
-      '', SW_HIDE, ewNoWait, Code) then
-      Log('Could not restart the setup: ' + SysErrorMessage(Code));
-  end;
 end;
 
 procedure InitializeWizard();
@@ -141,8 +106,6 @@ begin
   if CurStep = ssPostInstall then
   begin
     SaveStringToFile(ExpandConstant('{app}\{#Marker}'), '{#AppVersion}', False);
-    { 10.x registered itself under this key; the setup's own entry replaces it. }
-    RegDeleteKeyIncludingSubkeys(HKCU, LegacyUninstallKey);
   end;
 end;
 
@@ -168,19 +131,15 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  AppDir, OldDir: String;
+  AppDir: String;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
     AppDir := ExpandConstant('{app}');
-    OldDir := ExpandConstant('{userappdata}\AkulavLauncher');
     { Never delete data when silent. }
-    if (not UninstallSilent) and (HasLauncherData(AppDir) or HasLauncherData(OldDir)) then
+    if (not UninstallSilent) and HasLauncherData(AppDir) then
       if MsgBox(CustomMessage('DeleteData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
-      begin
         DeleteLauncherData(AppDir);
-        DeleteLauncherData(OldDir);
-      end;
     RemoveDir(AppDir);
   end;
 end;

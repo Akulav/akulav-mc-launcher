@@ -4,8 +4,7 @@
 #   AkulavLauncher-setup.exe     Windows x64 (Inno Setup; asks for the folder once, updates reuse it)
 #   AkulavLauncher-linux-x64     Linux x64 (installs itself into a folder you pick)
 #   AkulavLauncher-macos-arm64   macOS Apple Silicon (installs itself as an .app into a folder you pick)
-# plus SHA256SUMS.txt (installed launchers verify updates against it) and version.txt for
-# launchers older than 11.0, which still read it from akulav.com.
+# plus SHA256SUMS.txt (installed launchers verify updates against it).
 #
 # Releasing is automatic: bump `version` in Cargo.toml and push to main. When no release with that
 # version exists yet, the `release` job tags the commit (e.g. `11.0.0`) and publishes the release.
@@ -151,7 +150,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Checksums, version.txt and notes
+      - name: Checksums and notes
         env:
           VERSION: ${{ needs.meta.outputs.version }}
           BASE: https://github.com/${{ github.repository }}/releases/download/${{ needs.meta.outputs.version }}
@@ -160,12 +159,7 @@ jobs:
           cd dist
           chmod +x AkulavLauncher-linux-x64 AkulavLauncher-macos-arm64
           sha256sum AkulavLauncher-setup.exe AkulavLauncher-linux-x64 AkulavLauncher-macos-arm64 > SHA256SUMS.txt
-          win=$(sha256sum AkulavLauncher-setup.exe | cut -d' ' -f1)
-          lin=$(sha256sum AkulavLauncher-linux-x64 | cut -d' ' -f1)
-          # For launchers before 11.0 only: they read this file from akulav.com, download line 2
-          # (Windows) or the linux line, and hand over to the new version's installer.
-          printf '%s\n%s\n%s\nlinux %s %s\n' "$VERSION" "$BASE/AkulavLauncher-setup.exe" "$win" "$BASE/AkulavLauncher-linux-x64" "$lin" > version.txt
-          cat SHA256SUMS.txt version.txt
+          cat SHA256SUMS.txt
           {
             echo "## Akulav Launcher $VERSION"
             echo
@@ -203,4 +197,3 @@ jobs:
             dist/AkulavLauncher-linux-x64
             dist/AkulavLauncher-macos-arm64
             dist/SHA256SUMS.txt
-            dist/version.txt

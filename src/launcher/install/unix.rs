@@ -13,7 +13,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 
-use super::{installed_root, installed_version, is_install_root, same_path, sibling, swap_in, write_marker, Offer, Startup, StartupInfo, EXE_NAME, NEW_SUFFIX};
+use super::{installed_root, installed_version, is_install_root, same_path, sibling, swap_in, write_marker, Offer, EXE_NAME, NEW_SUFFIX};
 use crate::launcher::update::{is_newer, CURRENT_VERSION};
 
 fn pointer_file() -> Option<PathBuf> {
@@ -75,32 +75,6 @@ pub fn startup_offer() -> Offer {
     }
 }
 
-/// Launchers 10.x installed to `~/.local/share/AkulavLauncher/bin/` and update by swapping that
-/// binary. When this version arrives there, move it up into the folder (which already holds the
-/// data) and continue from there without asking.
-pub fn before_run(exe: &Path, info: &StartupInfo) -> Option<Startup> {
-    if !cfg!(target_os = "linux") || cfg!(debug_assertions) {
-        return None;
-    }
-    let bin_dir = exe.parent()?;
-    let root = bin_dir.parent()?;
-    let legacy_root = dirs::data_local_dir()?.join("AkulavLauncher");
-    if bin_dir.file_name()? != "bin" || !same_path(root, &legacy_root) {
-        return None;
-    }
-    let mut args = vec![];
-    if let Some(v) = &info.updated_from {
-        args.extend(["--updated-from", v.as_str()]);
-    }
-    match install_and_launch(root, &args) {
-        Ok(()) => Some(Startup::Exit),
-        Err(e) => {
-            eprintln!("could not move the launcher to {}: {e:#}", root.display());
-            None
-        }
-    }
-}
-
 pub fn on_installed_start(root: &Path) {
     // Keep the marker's version current after in-app updates, and the folder remembered.
     if super::installed_version(root).as_deref() != Some(CURRENT_VERSION) {
@@ -124,14 +98,7 @@ fn install_to(root: &Path) -> Result<PathBuf> {
         swap_in(&staged, &bin)?;
     }
     #[cfg(target_os = "linux")]
-    {
-        linux::integrate(&bin);
-        // The 10.x layout kept the binary in a bin/ subfolder. Deleting it is fine even while it
-        // runs: Linux keeps the file alive until the process exits.
-        if root.join("bin").join(EXE_NAME).is_file() {
-            let _ = std::fs::remove_dir_all(root.join("bin"));
-        }
-    }
+    linux::integrate(&bin);
     #[cfg(target_os = "macos")]
     macos::write_bundle(root)?;
     write_marker(root)?;
@@ -198,9 +165,6 @@ pub fn uninstall(delete_data: bool) -> Result<()> {
     forget();
     if delete_data {
         super::delete_data(&root);
-        if let Some(legacy) = super::legacy_data_root() {
-            super::delete_data(&legacy);
-        }
     }
     let _ = std::fs::remove_dir(&root);
     Ok(())
@@ -316,19 +280,6 @@ mod linux {
         }
         for p in [icon_path(), desktop_shortcut(), bin_link()].into_iter().flatten() {
             let _ = std::fs::remove_file(p);
-        }
-        // Window size/position remembered by the UI toolkit. It is written again when the window
-        // closes, so delete it once more a moment after we've exited.
-        if let Some(d) = dirs::data_local_dir() {
-            let dir = d.join(APP_ID);
-            let _ = std::fs::remove_dir_all(&dir);
-            let _ = std::process::Command::new("sh")
-                .args(["-c", "sleep 2; rm -rf -- \"$1\"", "sh"])
-                .arg(&dir)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
         }
     }
 

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
 use egui::{pos2, vec2, Align, Align2, Color32, CornerRadius, Frame, Id, Layout, Margin, Rect, RichText, Sense, Stroke, StrokeKind, TextureHandle};
 use egui_phosphor::regular as ph;
 
@@ -47,8 +47,6 @@ pub struct JobState {
 
 pub struct GameState {
     pub pack: String,
-    #[allow(dead_code)]
-    pub pid: u32,
     pub started: Instant,
     pub after_launch: AfterLaunch,
 }
@@ -197,8 +195,6 @@ pub struct LauncherApp {
     pub app_icon: Option<TextureHandle>,
 
     pub rt: tokio::runtime::Runtime,
-    #[allow(dead_code)]
-    pub tx: Sender<Event>,
     pub rx: Receiver<Event>,
     pub reporter: Reporter,
 }
@@ -214,7 +210,7 @@ impl LauncherApp {
 
         let (tx, rx) = crossbeam_channel::unbounded();
         let ctx = cc.egui_ctx.clone();
-        let reporter = Reporter::new(tx.clone(), Arc::new(move || ctx.request_repaint()));
+        let reporter = Reporter::new(tx, Arc::new(move || ctx.request_repaint()));
 
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(4)
@@ -272,14 +268,10 @@ impl LauncherApp {
             background,
             app_icon,
             rt,
-            tx,
             rx,
             reporter,
         };
         app.reporter.info(format!("Akulav Launcher {} by {} — {}", update::CURRENT_VERSION, update::AUTHOR, update::REPO_URL));
-        for note in &startup.notes {
-            app.reporter.info(note.clone());
-        }
         // While the install offer is up nothing is created or downloaded: if the user installs,
         // the installed copy starts with its own data folder.
         if app.install_offer == Offer::None {
@@ -464,13 +456,13 @@ impl LauncherApp {
                     self.skins.insert(key, entry);
                 }
                 Event::InstalledChanged => self.installed = InstalledDb::load(&self.paths),
-                Event::GameStarted { pid } => {
+                Event::GameStarted { .. } => {
                     let Some(job) = self.job.take() else { continue };
                     let total = self.total_ram_mb;
                     let after = self.settings.pack(&job.pack, total).after_launch;
                     self.settings.pack(&job.pack, total).last_played = Some(chrono::Utc::now());
                     self.mark_dirty();
-                    self.game = Some(GameState { pack: job.pack, pid, started: Instant::now(), after_launch: after });
+                    self.game = Some(GameState { pack: job.pack, started: Instant::now(), after_launch: after });
                     self.installed = InstalledDb::load(&self.paths);
                     match after {
                         AfterLaunch::Minimize => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
@@ -562,7 +554,7 @@ impl LauncherApp {
                 Some((if *total > 0 { format!("Downloading {:.0}%", *done as f32 * 100.0 / *total as f32) } else { "Downloading update…".into() }, BLUE))
             }
             UpdateState::Ready { .. } => Some(("Restart to update".into(), GREEN)),
-            UpdateState::Failed { .. } => Some(("Update failed".into(), ACCENT_HI)),
+            UpdateState::Failed { .. } => Some(("Update failed".into(), RED)),
         };
         if let Some((text, color)) = label {
             ui.add_space(8.0);
@@ -582,7 +574,7 @@ impl LauncherApp {
             ui.add_space(2.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                ui.label(RichText::new("Akulav Launcher").font(bold(15.5)).color(ACCENT_HI));
+                ui.label(RichText::new("Akulav Launcher").font(semibold(15.5)).color(TEXT));
                 ui.label(RichText::new("Minecraft modpacks").font(regular(11.5)).color(MUTED));
             });
         });
@@ -596,7 +588,7 @@ impl LauncherApp {
             [(Page::Home, ph::HOUSE, "Play"), (Page::Console, ph::TERMINAL_WINDOW, "Console"), (Page::Settings, ph::GEAR_SIX, "Settings")]
         {
             let badge = match page {
-                Page::Console if errors > 0 => Some((errors.min(99).to_string(), ACCENT)),
+                Page::Console if errors > 0 => Some((errors.min(99).to_string(), RED)),
                 Page::Console if playing => Some(("●".to_string(), GREEN)),
                 _ => None,
             };
@@ -644,14 +636,14 @@ impl LauncherApp {
             .char_limit(16)
             .hint_text("Nickname")
             .desired_width(field_rect.width())
-            .text_color(if valid.is_ok() { TEXT } else { ACCENT_HI });
+            .text_color(if valid.is_ok() { TEXT } else { RED });
         let resp = child.add_enabled(editable, edit).on_hover_text("Your in-game name (3–16 letters, digits or _)");
         if resp.changed() {
             self.name_changed();
         }
         let sub = match valid {
             Ok(()) => ("Offline account", MUTED),
-            Err(e) => (e, ACCENT_HI),
+            Err(e) => (e, RED),
         };
         let sub_rect = Rect::from_min_max(pos2(field_rect.left(), avatar.top() + 24.0), pos2(card.right() - 10.0, card.bottom() - 6.0));
         let galley = ui.painter().layout(sub.0.to_string(), regular(11.5), sub.1, sub_rect.width());
@@ -690,7 +682,7 @@ impl LauncherApp {
                 ToastKind::Info => (BLUE, ph::INFO),
                 ToastKind::Success => (GREEN, ph::CHECK_CIRCLE),
                 ToastKind::Warning => (GOLD, ph::WARNING),
-                ToastKind::Error => (ACCENT_HI, ph::WARNING_CIRCLE),
+                ToastKind::Error => (RED, ph::WARNING_CIRCLE),
             };
             let width = 360.0;
             let body_galley = ctx.fonts(|f| f.layout(t.body.clone(), regular(12.5), MUTED, width - 60.0));
@@ -897,7 +889,7 @@ impl LauncherApp {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(46.0, 46.0), Sense::hover());
                 ui.painter().rect_filled(r, CornerRadius::same(R_MD), with_alpha(ACCENT, 40));
-                ui.painter().text(r.center(), Align2::CENTER_CENTER, ph::ROCKET_LAUNCH, regular(24.0), ACCENT_HI);
+                ui.painter().text(r.center(), Align2::CENTER_CENTER, ph::ROCKET_LAUNCH, regular(24.0), ACCENT);
                 ui.vertical(|ui| {
                     label_kicker(ui, "Launcher update");
                     ui.label(RichText::new(format!("Version {}", info.version)).font(bold(20.0)));
@@ -972,7 +964,7 @@ impl LauncherApp {
                     });
                 }
                 UpdateState::Failed { error, .. } => {
-                    ui.label(RichText::new(error).color(ACCENT_HI).font(regular(12.5)));
+                    ui.label(RichText::new(error).color(RED).font(regular(12.5)));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1059,7 +1051,7 @@ impl LauncherApp {
                         }
                         if let Some(err) = &self.install_error {
                             ui.add_space(8.0);
-                            ui.label(RichText::new(err).font(regular(12.5)).color(ACCENT_HI));
+                            ui.label(RichText::new(err).font(regular(12.5)).color(RED));
                         }
                         ui.add_space(20.0);
                         ui.horizontal(|ui| {
@@ -1126,10 +1118,9 @@ impl eframe::App for LauncherApp {
             jobs::spawn_update_check(self.rt.handle(), self.reporter.clone());
         }
 
-        // A floating glass sidebar, like Hyve's.
+        // Windows 11's navigation pane: flat on the window background, no card around it.
         egui::SidePanel::left("sidebar").exact_width(254.0).resizable(false).show_separator_line(false).frame(Frame::new()).show(ctx, |ui| {
             let panel = Rect::from_min_max(ui.max_rect().min + vec2(GAP, GAP), ui.max_rect().max - vec2(0.0, GAP));
-            ui.painter().rect(panel, CornerRadius::same(R_LG), GLASS, Stroke::new(1.0_f32, GLASS_BORDER), StrokeKind::Inside);
             ui.scope_builder(egui::UiBuilder::new().max_rect(panel.shrink(12.0)), |ui| self.sidebar(ui));
         });
 
@@ -1201,24 +1192,24 @@ fn nav_item(ui: &mut egui::Ui, icon: &str, label: &str, active: bool, badge: Opt
     let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.1);
     let act = ui.ctx().animate_bool_with_time(resp.id.with("a"), active, 0.15);
     let p = ui.painter();
-    // Hyve's nav item: a faint hover, and for the current page an accent gradient with an accent border.
-    p.rect_filled(rect, CornerRadius::same(R_MD), with_alpha(Color32::WHITE, (hover * (1.0 - act) * 13.0) as u8));
+    // Windows 11's nav item: a faint layer on hover and on the current page, which also gets the accent pill.
+    p.rect_filled(rect, CornerRadius::same(R_MD), with_alpha(Color32::WHITE, (hover.max(act) * 11.0) as u8));
     if act > 0.0 {
-        hgradient_rounded(p, rect, with_alpha(ACCENT, (72.0 * act) as u8), with_alpha(ACCENT, (20.0 * act) as u8), R_MD);
-        p.rect_stroke(rect, CornerRadius::same(R_MD), Stroke::new(1.0_f32, with_alpha(ACCENT, (90.0 * act) as u8)), StrokeKind::Inside);
+        let pill = Rect::from_center_size(pos2(rect.left() + 1.5, rect.center().y), vec2(3.0, 16.0 * act));
+        p.rect_filled(pill, CornerRadius::same(2), ACCENT);
     }
     let fg = lerp_color(lerp_color(lerp_color(MUTED, TEXT, 0.55), TEXT, hover), TEXT, act);
-    p.text(rect.left_center() + vec2(18.0, 0.0), Align2::LEFT_CENTER, icon, regular(19.0), if active { ACCENT_HI } else { fg });
+    p.text(rect.left_center() + vec2(18.0, 0.0), Align2::LEFT_CENTER, icon, regular(19.0), if active { ACCENT } else { fg });
     p.text(rect.left_center() + vec2(48.0, 0.0), Align2::LEFT_CENTER, label, semibold(14.5), fg);
     if let Some((text, color)) = badge {
-        let g = p.layout_no_wrap(text, bold(11.0), Color32::WHITE);
+        let g = p.layout_no_wrap(text, bold(11.0), ON_ACCENT);
         let w = (g.size().x + 12.0).max(20.0);
         let b = Rect::from_center_size(rect.right_center() - vec2(12.0 + w / 2.0, 0.0), vec2(w, 20.0));
         if color == GREEN {
             p.circle_filled(b.center(), 4.0, GREEN);
         } else {
             p.rect_filled(b, CornerRadius::same(255), color);
-            p.galley(b.center() - g.size() / 2.0, g, Color32::WHITE);
+            p.galley(b.center() - g.size() / 2.0, g, ON_ACCENT);
         }
     }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)

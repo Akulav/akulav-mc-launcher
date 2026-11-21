@@ -219,7 +219,7 @@ mod tests {
             "arguments":{"game":["--username","${auth_player_name}","--assetIndex","${assets_index_name}",
                {"rules":[{"action":"allow","features":{"has_custom_resolution":true}}],"value":["--width","${resolution_width}","--height","${resolution_height}"]}],
              "jvm":["-Djava.library.path=${natives_directory}","-DlibraryDirectory=${library_directory}","-cp","${classpath}"]}}"#).unwrap();
-        let rv = ResolvedVersion { json, chain: vec![], jar_source: "1.21.1".into() };
+        let rv = ResolvedVersion { json, jar_source: "1.21.1".into() };
         let opts = LaunchOptions {
             username: "Steve".into(),
             ram_mb: 6144,

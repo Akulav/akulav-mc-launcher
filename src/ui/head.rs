@@ -1,5 +1,5 @@
 //! Minecraft head rendering: a textured, shaded 3D cube (with the hat overlay) drawn from a
-//! 64×64 skin, plus a flat face variant and a procedural skin for names without one.
+//! 64×64 skin, plus a procedural skin for names without one.
 
 use egui::epaint::{Mesh, Vertex};
 use egui::{pos2, Color32, Pos2, Rect, TextureId};
