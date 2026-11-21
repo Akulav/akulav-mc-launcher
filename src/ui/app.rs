@@ -156,6 +156,8 @@ pub struct LauncherApp {
     pub packs_from_cache: bool,
 
     pub page: Page,
+    /// Which Settings tab is open.
+    pub settings_tab: usize,
     pub drawer_open: bool,
     pub job: Option<JobState>,
     pub game: Option<GameState>,
@@ -235,6 +237,7 @@ impl LauncherApp {
             packs_error: None,
             packs_from_cache: false,
             page: Page::Home,
+            settings_tab: 0,
             drawer_open: false,
             job: None,
             game: None,

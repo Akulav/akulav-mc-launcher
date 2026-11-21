@@ -53,7 +53,7 @@ impl LauncherApp {
 
     pub fn console_page(&mut self, ui: &mut Ui) {
         self.unseen_errors = 0;
-        let outer = ui.max_rect().shrink2(vec2(32.0, 26.0));
+        let outer = centered_rect(ui.max_rect().shrink2(vec2(32.0, 26.0)), 1400.0);
         let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(outer));
 
         ui.horizontal(|ui| {

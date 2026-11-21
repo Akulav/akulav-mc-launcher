@@ -4,6 +4,14 @@ All notable changes to Akulav Launcher are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Older versions are described on the
 [releases page](https://github.com/Akulav/akulav-mc-launcher/releases).
 
+## [11.3.0] - 2026-11-21
+
+### Changed
+- **Centred pages that grow with the window:** Play, Console and Settings sit in a centred column instead of hugging
+  the left edge (the wallpaper still fills the window).
+- **Settings in tabs:** Account, Game (modpack source, Java, downloads), Launcher (sounds, background, storage) and
+  About, so each fits on one screen.
+
 ## [11.2.0] - 2026-11-21
 
 ### Changed

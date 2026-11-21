@@ -13,17 +13,20 @@ use crate::launcher::update;
 
 impl LauncherApp {
     pub fn settings_page(&mut self, ui: &mut Ui) {
-        let outer = ui.max_rect().shrink2(vec2(32.0, 26.0));
+        let outer = centered_rect(ui.max_rect().shrink2(vec2(32.0, 26.0)), 960.0);
         let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(outer));
         label_kicker(&mut ui, "Preferences");
         ui.label(RichText::new("Settings").font(black(30.0)));
         ui.add_space(12.0);
+        // Grouped in tabs so each fits on one screen.
+        tab_strip(&mut ui, &[(ph::USER, "Account"), (ph::GAME_CONTROLLER, "Game"), (ph::SLIDERS_HORIZONTAL, "Launcher"), (ph::INFO, "About")], &mut self.settings_tab);
+        ui.add_space(14.0);
+        let tab = self.settings_tab;
 
         ScrollArea::vertical().auto_shrink([false, false]).show(&mut ui, |ui| {
-            ui.set_max_width(820.0);
             let mut changed = false;
 
-            card(ui, "Account", ph::USER, |ui| {
+            if tab == 0 { card(ui, "Account", ph::USER, |ui| {
                 ui.horizontal(|ui| {
                     // Big 3D head: drag to spin it, it settles back to a three-quarter view.
                     let (rect, resp) = ui.allocate_exact_size(vec2(132.0, 132.0), egui::Sense::drag());
@@ -78,10 +81,9 @@ impl LauncherApp {
                         );
                     });
                 });
-            });
-            ui.add_space(12.0);
+            }); }
 
-            card(ui, "Modpack source", ph::GLOBE, |ui| {
+            if tab == 1 { card(ui, "Modpack source", ph::GLOBE, |ui| {
                 ui.label(RichText::new("Where the launcher gets the list of modpacks. Leave empty to use the official Akulav list.").color(MUTED));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
@@ -142,10 +144,9 @@ impl LauncherApp {
                         changed = true;
                     }
                 });
-            });
-            ui.add_space(12.0);
+            }); }
 
-            card(ui, "Launcher", ph::SLIDERS_HORIZONTAL, |ui| {
+            if tab == 2 { card(ui, "Launcher", ph::SLIDERS_HORIZONTAL, |ui| {
                 setting_row(ui, "Click sound", "The lever sound from the original launcher.", |ui| {
                     if toggle(ui, &mut self.settings.click_sound).changed() {
                         changed = true;
@@ -191,10 +192,9 @@ impl LauncherApp {
                         }
                     });
                 }
-            });
-            ui.add_space(12.0);
+            }); }
 
-            card(ui, "About", ph::INFO, |ui| {
+            if tab == 3 { card(ui, "About", ph::INFO, |ui| {
                 let credit = format!("Made with love by {}. Source-available, no telemetry, written in Rust.", update::AUTHOR);
                 setting_row(ui, &format!("Akulav Launcher {}", update::CURRENT_VERSION), &credit, |ui| {
                     if ghost_button(ui, ph::GITHUB_LOGO, "GitHub").clicked() {
@@ -215,7 +215,7 @@ impl LauncherApp {
                         }
                     }
                 });
-            });
+            }); }
             ui.add_space(24.0);
 
             if changed {

@@ -59,7 +59,8 @@ impl LauncherApp {
             &super::backdrop::BackdropParams { time: ui.input(|i| i.time), animate, pointer: if animate { pointer } else { egui::Vec2::ZERO } },
         );
 
-        let content = full.shrink2(vec2(40.0, 32.0));
+        // The wallpaper fills the window; the content sits in a centred column that grows with it.
+        let content = centered_rect(full.shrink2(vec2(40.0, 32.0)), 1400.0);
         let play_bar_h = 96.0;
         let library_h = 116.0;
         let bar_rect = Rect::from_min_max(pos2(content.left(), content.bottom() - play_bar_h), content.max);
